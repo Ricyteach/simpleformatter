@@ -143,6 +143,8 @@ def example_d(D):
     return D()
 
 
+### example fixture tests (does NOT test the api!!) ####################################################################
+
 @pytest.mark.parametrize("cls_name, formatter_name, spec",[
     ("A", "A.my_formatter", empty_str),
     ("A", "A.my_formatter", "spec"),
@@ -177,6 +179,7 @@ def test_formatter_function(cls_name, formatter_name, spec, A, example_a, B, exa
         except TypeError:
             assert formatter(obj) == result
 
+### api tests ##########################################################################################################
 
 @pytest.mark.parametrize("cls_name, spec",[
     ("A", empty_str),
