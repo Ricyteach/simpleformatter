@@ -1,23 +1,12 @@
 # -*- coding: utf-8 -*-
 
 """Main module."""
-from string import Formatter
+from inspect import signature
 
-OVERRIDE_OBJECT = True
+# re-create object.__format__ error message
+default_type_error_msg = "unsupported format string passed to {cls.__qualname__}.__format__"
 
-
-def override_object(val):
-    """Set flag for overriding the default capability of object.__format__ to handle these:
-
-        >>> format(obj)
-        >>> format(obj, "")
-        >>> f'{obj}'
-        >>> f'{obj:}'
-        """
-    if val not in (True, False):
-        raise SimpleFormatterError("object.__format__ override must be True or False")
-    global OVERRIDE_OBJECT
-    OVERRIDE_OBJECT = val
+empty_str = ""  # for readability
 
 
 def simpleformatter(func=None, *, spec=None):
@@ -26,7 +15,7 @@ def simpleformatter(func=None, *, spec=None):
         raise TypeError(f"{func.__qualname__!r} func not a callable; spec must be keyword argument")
 
     if spec is None:
-        spec=""
+        spec=empty_str
 
     def mark_simpleformatter_spec(f):
         try:
@@ -53,22 +42,33 @@ class SimpleFormattable:
         super().__init_subclass__(**kwargs)
         cls.__register_marked()
 
-    def __format__(self, format_spec):
-        cls=type(self)
+    def __format__(self, format_spec=""):
         try:
-            formatter_cls_dict = self.__subclass_dict[cls]
-        except KeyError as e:
-            raise SimpleFormatterError(f"{cls.__qualname__} class not registered in SimpleFormattable.__subclass_dict") from e
-        try:
-            formatter = formatter_cls_dict[format_spec]
-        except KeyError:
-            return super().__format__(format_spec)
-        else:
+            # get registered formatter
+            formatter = self.__lookup_formatter(format_spec)
+        except SimpleFormatterError as e1:
             try:
-                return formatter(self, format_spec)
-            except TypeError:
-                # formatter function may discard format_spec argument
+                # format_spec not registered with a formatter; fall back on parent __format__ functionality
+                return super().__format__(format_spec)
+            except Exception as e2:
+                # if parent functionality fails, raise from previous exception for clarity
+                raise e2 from e1
+        else:
+            # user defined simpleformatter function *may* discard format_spec argument for convenience (DRY!)
+            if len(signature(formatter).parameters) == 1:
                 return formatter(self)
+            return formatter(self, format_spec)
+
+    @classmethod
+    def __lookup_formatter(cls, format_spec):
+        """Gets the registered formatting function, raises SimpleFormatterError if one isn't found"""
+        for cls_obj in cls.__mro__:
+            try:
+                return cls.__subclass_dict[cls_obj][format_spec]
+            except KeyError:
+                continue
+        else:
+            raise SimpleFormatterError(f"{format_spec!r} format_spec not registered for {cls.__qualname__} class")
 
     @classmethod
     def __register(cls, spec, func):
