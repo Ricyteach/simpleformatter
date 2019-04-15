@@ -81,7 +81,7 @@ class SimpleFormattable:
         for member in vars(cls).values():
             if callable(member) and hasattr(member, "_simpleformatter_specs"):
                 for spec in member._simpleformatter_specs:
-                  cls.__subclass_dict[cls][spec] = member
+                  cls.__register(spec, member)
 
 
 class SimpleFormatterError(Exception):
