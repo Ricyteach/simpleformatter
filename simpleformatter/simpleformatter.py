@@ -25,6 +25,9 @@ def simpleformatter(func=None, *, spec=None):
     if func is not None and not callable(func):
         raise TypeError(f"{func.__qualname__!r} func not a callable; spec must be keyword argument")
 
+    if spec is None:
+        spec=""
+
     def mark_simpleformatter_spec(f):
         try:
             specs_set = f._simpleformatter_specs

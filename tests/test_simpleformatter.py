@@ -1,19 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Tests for `simpleformatter` package.
-
-NOTE: each example class has a test_results dictionary that contains the expected test results for a give format_spec
-
-the dictionary returns None for a format_spec that isn't expected
-
-when a format_spec isn't expected, either a TypeError is raised, or the default object.__format__ method is invoked
-
-which of these two behaviors occurs depends on the value of OVERRIDE_OBJECT (True or False)
-"""
+"""Tests for `simpleformatter` package."""
 
 from collections import defaultdict
 import pytest
+
+empty_str = ""  # for readability
 
 
 @pytest.fixture
@@ -28,6 +21,17 @@ def SimpleFormatterError(simpleformatter):
     from simpleformatter.simpleformatter import SimpleFormatterError
     return SimpleFormatterError
 
+### example api implementation fixtures ################################################################################
+# NOTE: each example class fixture has its own test_results dictionary (defaultdict) that contains the expected test
+# results for a given format_spec, e.g.:
+#
+#                                spec      expected result
+#                                -----     ---------------
+#                   test_results["foo"] = "fooed result"
+#                   test_results["bar"] = "barred result"
+#
+# the dictionary returns None for a format_spec that isn't expected; when a format_spec isn't expected a TypeError is
+# raised upon application of the formatter function (such as format, an f-string, string.format, or a Formatter)
 
 @pytest.fixture
 def A(simpleformatter):
@@ -35,14 +39,15 @@ def A(simpleformatter):
     class A(simpleformatter.SimpleFormattable):
         """A class that has a custom formatting function decorated by simpleformatter
 
-        the function accepts no arguments so no spec is allowed"""
+        the function accepts no arguments so no spec is allowed other than the default, empty_str"""
         test_results = defaultdict(lambda: None)
-        test_results[None] = "class A object"
-        # test_results[''] = "class A object"  <-- keep commented; only works if OVERRIDE_OBJECT==True
+
+        # my_formatter expected results
+        test_results[empty_str] = "class A object formatted"  # no spec argument equivalent to empty_str
 
         @simpleformatter.simpleformatter
         def my_formatter(self):
-            return str(self)
+            return str(self) + " formatted"
 
         def __str__(self):
             return "class A object"
@@ -61,16 +66,24 @@ def B(simpleformatter):
     class B(simpleformatter.SimpleFormattable):
         """A class that has a custom formatting function decorated by simpleformatter, with spec = 'special_'"""
         test_results = defaultdict(lambda: None)
-        test_results["specialx"] = "class B object spec = 'specialx'"
-        test_results["specialy"] = "class B object spec = 'specialy'"
 
+        # specialx_formatter expected results
+        test_results[empty_str] = "class B object spec = ''"
+        test_results["specialx"] = "class B object spec = 'specialx'"
+
+        # specialyz_formatter expected results
+        test_results["specialy"] = "class B object spec = 'specialyz'"
+        test_results["specialz"] = "class B object spec = 'specialyz'"
+
+        @simpleformatter.simpleformatter
         @simpleformatter.simpleformatter(spec="specialx")
         def specialx_formatter(self, spec):
             return f"class B object spec = {spec!r}"
 
         @simpleformatter.simpleformatter(spec="specialy")
-        def specialy_formatter(self):
-            return str(self) + " spec = 'specialy'"
+        @simpleformatter.simpleformatter(spec="specialz")
+        def specialyz_formatter(self):
+            return str(self) + " spec = 'specialyz'"
 
         def __str__(self):
             return "class B object"
@@ -85,11 +98,26 @@ def example_b(B):
 
 @pytest.fixture
 def C(simpleformatter):
-
     class C(simpleformatter.SimpleFormattable):
-        """A class that assigns a custom external Formatter api object"""
-        # TODO: figure out if this makes sense
-        pass
+        """A class that has a custom formatting function decorated by simpleformatter, with spec = 'special_'"""
+        test_results = defaultdict(lambda: None)
+
+        # parent formatter is == format function
+        test_results[""] = "class C object"
+
+        # special_formatter expected results
+        test_results["specialx"] = "class C object spec = 'specialx'"
+        test_results["specialy"] = "class C object spec = 'specialy'"
+        test_results["specialz"] = "class C object spec = 'specialz'"
+
+        @simpleformatter.simpleformatter(spec="specialx")
+        @simpleformatter.simpleformatter(spec="specialy")
+        @simpleformatter.simpleformatter(spec="specialz")
+        def special_formatter(self, spec):
+            return f"class C object spec = {spec!r}"
+
+        def __str__(self):
+            return "class C object"
 
     return C
 
@@ -99,17 +127,37 @@ def example_c(C):
     return C()
 
 
+@pytest.fixture
+def D(simpleformatter):
+
+    class D(simpleformatter.SimpleFormattable):
+        """A class that assigns a custom external Formatter api object"""
+        # TODO: figure out if this makes sense
+        pass
+
+    return D
+
+
+@pytest.fixture
+def example_d(D):
+    return D()
+
+
 @pytest.mark.parametrize("cls_name, formatter_name, spec",[
-    ("A", "A.my_formatter", None),
-    ("A", "A.my_formatter", ""),
+    ("A", "A.my_formatter", empty_str),
     ("A", "A.my_formatter", "spec"),
-    ("B", "B.specialx_formatter",""),
-    ("B", "B.specialx_formatter","''"),
+    ("B", "B.specialx_formatter", empty_str),
     ("B", "B.specialx_formatter","specialx"),
-    ("B", "B.specialy_formatter","specialy"),
+    ("B", "B.specialyz_formatter","specialy"),
+    ("B", "B.specialyz_formatter","specialz"),
+    ("C", "format", empty_str),  # parent formatter is == format function
+    ("C", "C.special_formatter", "specialx"),
+    ("C", "C.special_formatter", "specialy"),
+    ("C", "C.special_formatter", "specialz"),
 ], ids=[
-    "A.my_formatter None", "A.my_formatter empty_str", "A.my_formatter 'spec'",
-    "B.my_formatter empty_str", "B.specialx_formatter ''", "B.specialx_formatter", "B.specialy_formatter"
+    "A.my_formatter empty_str", "A.my_formatter 'spec'",
+    "B.my_formatter empty_str", "B.specialx_formatter", "B.specialyz_formatter y", "B.specialyz_formatter z",
+    "C.my_formatter empty_str", "C.special_formatter x", "C.special_formatter y", "C.special_formatter z",
 ])
 def test_formatter_function(cls_name, formatter_name, spec, A, example_a, B, example_b, C, example_c):
     """Does not test the api!!!! Makes sure the formatter_name functions for test suite example classes are working"""
@@ -131,16 +179,20 @@ def test_formatter_function(cls_name, formatter_name, spec, A, example_a, B, exa
 
 
 @pytest.mark.parametrize("cls_name, spec",[
-    ("A", None),
-    ("A", ""),
+    ("A", empty_str),
     ("A", "spec"),
-    ("B", ""),
-    ("B","''"),
+    ("B", empty_str),
     ("B", "specialx"),
     ("B", "specialy"),
+    ("B", "specialz"),
+    ("C", empty_str),  # parent formatter is == format function
+    ("C", "specialx"),
+    ("C", "specialy"),
+    ("C", "specialz"),
 ], ids=[
-    "A.my_formatter None", "A.my_formatter empty_str", "A.my_formatter 'spec'",
-    "B.my_formatter empty_str", "B.specialx_formatter ''", "B.specialx_formatter", "B.specialy_formatter"
+    "A.my_formatter empty_str", "A.my_formatter 'spec'",
+    "B.my_formatter empty_str", "B.specialx_formatter", "B.specialyz_formatter y", "B.specialyz_formatter z",
+    "C.my_formatter empty_str", "C.special_formatter x", "C.special_formatter y", "C.special_formatter z",
 ])
 def test_simpleformatter_api(cls_name, spec, A, example_a, B, example_b, C, example_c):
     """The actual api tested here"""
@@ -158,3 +210,43 @@ def test_simpleformatter_api(cls_name, spec, A, example_a, B, example_b, C, exam
             assert f"{obj}" == result
         else:
             assert f"{obj:{spec!s}}" == result
+
+
+def test_ambiguous_no_spec(simpleformatter):
+    """having two competing functions for no format spec is ambiguous"""
+
+    with pytest.raises(SimpleFormatterError):
+
+        class X(simpleformatter.SimpleFormattable):
+
+            @simpleformatter.simpleformatter
+            def a(self): ...
+
+            @simpleformatter.simpleformatter
+            def b(self): ...
+
+
+def test_ambiguous_competing(simpleformatter):
+    """having two competing functions for SAME format spec is ambiguous"""
+
+    with pytest.raises(SimpleFormatterError):
+        class X(simpleformatter.SimpleFormattable):
+
+            @simpleformatter.simpleformatter("spec")
+            def a(self): ...
+
+            @simpleformatter.simpleformatter("spec")
+            def b(self): ...
+
+
+def test_ambiguous_special(simpleformatter):
+    """having two functions, one with no spec and one with empty_str spec is ambiguous"""
+
+    with pytest.raises(SimpleFormatterError):
+        class X(simpleformatter.SimpleFormattable):
+
+            @simpleformatter.simpleformatter
+            def a(self): ...
+
+            @simpleformatter.simpleformatter(empty_str)
+            def b(self): ...
