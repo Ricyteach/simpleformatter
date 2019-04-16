@@ -21,7 +21,7 @@ NO_ARG = NoArgType()
 
 
 def _negotiate_decorator(dec, pos1):
-    """Determine if the decorator was called and act accordingly"""
+    """Determine if the decorator was called with or without a first arg when it was invoked and act accordingly"""
 
     if pos1 is NO_ARG:
         return dec
@@ -49,7 +49,7 @@ def _wrap_cls__format__(cls):
             if len(signature(formatter).parameters) == 0:
                 return formatter()
             # user defined simpleformatter function *may* discard format_spec argument for convenience (DRY!)
-            # TODO: figure out if want to allow discarding self and keeping format_spec? how to do?
+            # TODO: figure out if want to allow discarding self and keeping format_spec? how to do? check staticmethod??
             if len(signature(formatter).parameters) == 1:
                 return formatter(self)
             return formatter(self, format_spec)
@@ -66,11 +66,14 @@ def _lookup_formatter(cls, format_spec):
             if format_spec in getattr(member, SPECS_HOLDER_ATTR, ()):
                 return member
     else:
-        raise SimpleFormatterError(f"{format_spec!r} format_spec not registered for {cls.__qualname__} class")
+        raise SimpleFormatterError(f"no {format_spec!r} format_spec found for {cls.__qualname__} class")
 
 
 def _class_decorator(cls_arg=NO_ARG, *, spec=None, func=None):
     """Private decorator for adding customized __format__ method to class."""
+    # TODO: implement spec/formatter handling on the class level:
+    #   @simpleformatter(spec="spec", func=spec_handler)
+    #   class C: ...
 
     def wrap_cls__format__(cls_obj):
         _wrap_cls__format__(cls_obj)
@@ -80,7 +83,7 @@ def _class_decorator(cls_arg=NO_ARG, *, spec=None, func=None):
 
 
 def _formatter_func_decorator(func=NO_ARG, *, spec=None):
-    """Private decorator for registering formatter specs with formatter functions"""
+    """Private decorator for attaching specs to formatter functions"""
 
     if spec is None:
         spec = empty_str
@@ -130,4 +133,5 @@ def simpleformatter(pos1=NO_ARG, *, spec=None, func=None):
 
 
 class SimpleFormatterError(Exception):
+    """I'm an exception. Kneel before me. Lower."""
     pass

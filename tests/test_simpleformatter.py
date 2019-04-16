@@ -34,7 +34,7 @@ def SimpleFormatterError(simpleformatter):
 #
 # The dictionary returns None for a format_spec that isn't expected; when a format_spec isn't expected, behavior falls
 # back on default/parent behavior upon application of the formatter function (such as format, an f-string, a Formatter,
-# or string.format). If fallback behavior raises an exception, the exception will raise *FROM* and SimpleFormatterError.
+# or string.format). If fallback behavior raises an exception, the exception will raise *FROM* a SimpleFormatterError.
 
 
 @pytest.fixture
@@ -43,13 +43,15 @@ def A(simpleformatter):
     class A:
         """A class that has a custom formatting function decorated by simpleformatter
 
-        the function accepts no arguments so no spec is allowed other than the default, empty_str"""
+        the uncalled decorator means the default format spec, which is empty_str
+
+        the function accepts only a self argument (ie, it expects no spec argument)"""
         test_results = defaultdict(lambda: None)
 
         # my_formatter expected results
         test_results[empty_str] = "class A object formatted"  # no spec argument equivalent to empty_str
 
-        @simpleformatter.simpleformatter
+        @simpleformatter.simpleformatter  # no spec argument equivalent to empty_str
         def my_formatter(self):
             return str(self) + " formatted"
 
@@ -68,7 +70,7 @@ def example_a(A):
 def B(simpleformatter):
     @simpleformatter.simpleformatter
     class B:
-        """A class that has a custom formatting function decorated by simpleformatter, with spec = 'special_'"""
+        """A class that has doubly decorated custom formatting functions, different with specs"""
         test_results = defaultdict(lambda: None)
 
         # specialx_formatter expected results
@@ -104,10 +106,12 @@ def example_b(B):
 def C(simpleformatter):
     @simpleformatter.simpleformatter
     class C:
-        """A class that has a custom formatting function decorated by simpleformatter, with spec = 'special_'"""
+        """A class that has multiple-decorated custom formatting function
+
+        for this one, the empty_str spec falls back on default __format__ functionality"""
         test_results = defaultdict(lambda: None)
 
-        # parent formatter is == format function
+        # parent formatter is == object.__format__ function (~equivalent to format() built-in)
         test_results[""] = "class C object"
 
         # special_formatter expected results
@@ -121,6 +125,7 @@ def C(simpleformatter):
         def special_formatter(self, spec):
             return f"class C object spec = {spec!r}"
 
+        # the object.__format__ function just returns obj.__str__
         def __str__(self):
             return "class C object"
 
@@ -148,12 +153,12 @@ def example_d(D):
     return D()
 
 
-# example fixture tests (does NOT test the api!!) ######################################################################
+# example fixture tests (does NOT test the api!!); verify formatter functions are "working" ############################
 
 @pytest.mark.parametrize("cls_name, formatter_name, spec", [
-    ("A", "A.my_formatter", empty_str),
+    ("A", "A.my_formatter", empty_str),  # no argument to simpleformatter decorator == empty_str format spec
     ("A", "A.my_formatter", "spec"),
-    ("B", "B.specialx_formatter", empty_str),
+    ("B", "B.specialx_formatter", empty_str),  # no argument to simpleformatter decorator == empty_str format spec
     ("B", "B.specialx_formatter", "specialx"),
     ("B", "B.specialyz_formatter", "specialy"),
     ("B", "B.specialyz_formatter", "specialz"),
@@ -188,9 +193,9 @@ def test_formatter_function(cls_name, formatter_name, spec, A, example_a, B, exa
 # api tests ############################################################################################################
 
 @pytest.mark.parametrize("cls_name, spec", [
-    ("A", empty_str),
+    ("A", empty_str),  # no argument to simpleformatter decorator == empty_str format spec
     ("A", "spec"),
-    ("B", empty_str),
+    ("B", empty_str),  # no argument to simpleformatter decorator == empty_str format spec
     ("B", "specialx"),
     ("B", "specialy"),
     ("B", "specialz"),
@@ -221,7 +226,7 @@ def test_simpleformatter_api(cls_name, spec, A, example_a, B, example_b, C, exam
             assert f"{obj:{spec!s}}" == result
 
 
-def test_ambiguous_no_spec_inheritance(simpleformatter):
+def test_ambiguous_no_spec_and_inheritance(simpleformatter):
     """last defined spec wins with competing functions"""
 
     @simpleformatter.simpleformatter
