@@ -21,7 +21,9 @@ def SimpleFormatterError(simpleformatter):
     from simpleformatter.simpleformatter import SimpleFormatterError
     return SimpleFormatterError
 
-### example api implementation fixtures ################################################################################
+
+# example api implementation fixtures ##################################################################################
+#
 # NOTE: each example class fixture has its own test_results dictionary (defaultdict) that contains the expected test
 # results for a given format_spec, e.g.:
 #
@@ -30,12 +32,13 @@ def SimpleFormatterError(simpleformatter):
 #                   test_results["foo"] = "fooed result"
 #                   test_results["bar"] = "barred result"
 #
-# the dictionary returns None for a format_spec that isn't expected; when a format_spec isn't expected a TypeError is
-# raised upon application of the formatter function (such as format, an f-string, string.format, or a Formatter)
+# The dictionary returns None for a format_spec that isn't expected; when a format_spec isn't expected, behavior falls
+# back on default/parent behavior upon application of the formatter function (such as format, an f-string, a Formatter,
+# or string.format). If fallback behavior raises an exception, the exception will raise *FROM* and SimpleFormatterError.
+
 
 @pytest.fixture
 def A(simpleformatter):
-
     class A(simpleformatter.SimpleFormattable):
         """A class that has a custom formatting function decorated by simpleformatter
 
@@ -62,7 +65,6 @@ def example_a(A):
 
 @pytest.fixture
 def B(simpleformatter):
-
     class B(simpleformatter.SimpleFormattable):
         """A class that has a custom formatting function decorated by simpleformatter, with spec = 'special_'"""
         test_results = defaultdict(lambda: None)
@@ -129,7 +131,6 @@ def example_c(C):
 
 @pytest.fixture
 def D(simpleformatter):
-
     class D(simpleformatter.SimpleFormattable):
         """A class that assigns a custom external Formatter api object"""
         # TODO: figure out if this makes sense
@@ -145,13 +146,13 @@ def example_d(D):
 
 ### example fixture tests (does NOT test the api!!) ####################################################################
 
-@pytest.mark.parametrize("cls_name, formatter_name, spec",[
+@pytest.mark.parametrize("cls_name, formatter_name, spec", [
     ("A", "A.my_formatter", empty_str),
     ("A", "A.my_formatter", "spec"),
     ("B", "B.specialx_formatter", empty_str),
-    ("B", "B.specialx_formatter","specialx"),
-    ("B", "B.specialyz_formatter","specialy"),
-    ("B", "B.specialyz_formatter","specialz"),
+    ("B", "B.specialx_formatter", "specialx"),
+    ("B", "B.specialyz_formatter", "specialy"),
+    ("B", "B.specialyz_formatter", "specialz"),
     ("C", "format", empty_str),  # parent formatter is == format function
     ("C", "C.special_formatter", "specialx"),
     ("C", "C.special_formatter", "specialy"),
@@ -179,9 +180,10 @@ def test_formatter_function(cls_name, formatter_name, spec, A, example_a, B, exa
         except TypeError:
             assert formatter(obj) == result
 
+
 ### api tests ##########################################################################################################
 
-@pytest.mark.parametrize("cls_name, spec",[
+@pytest.mark.parametrize("cls_name, spec", [
     ("A", empty_str),
     ("A", "spec"),
     ("B", empty_str),
@@ -219,7 +221,6 @@ def test_ambiguous_no_spec(simpleformatter):
     """having two competing functions for no format spec is ambiguous"""
 
     with pytest.raises(SimpleFormatterError):
-
         class X(simpleformatter.SimpleFormattable):
 
             @simpleformatter.simpleformatter
