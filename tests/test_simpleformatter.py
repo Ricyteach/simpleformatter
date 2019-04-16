@@ -39,7 +39,8 @@ def SimpleFormatterError(simpleformatter):
 
 @pytest.fixture
 def A(simpleformatter):
-    class A(simpleformatter.SimpleFormattable):
+    @simpleformatter.simpleformatter
+    class A:
         """A class that has a custom formatting function decorated by simpleformatter
 
         the function accepts no arguments so no spec is allowed other than the default, empty_str"""
@@ -65,7 +66,8 @@ def example_a(A):
 
 @pytest.fixture
 def B(simpleformatter):
-    class B(simpleformatter.SimpleFormattable):
+    @simpleformatter.simpleformatter
+    class B:
         """A class that has a custom formatting function decorated by simpleformatter, with spec = 'special_'"""
         test_results = defaultdict(lambda: None)
 
@@ -100,7 +102,8 @@ def example_b(B):
 
 @pytest.fixture
 def C(simpleformatter):
-    class C(simpleformatter.SimpleFormattable):
+    @simpleformatter.simpleformatter
+    class C:
         """A class that has a custom formatting function decorated by simpleformatter, with spec = 'special_'"""
         test_results = defaultdict(lambda: None)
 
@@ -131,7 +134,8 @@ def example_c(C):
 
 @pytest.fixture
 def D(simpleformatter):
-    class D(simpleformatter.SimpleFormattable):
+    @simpleformatter.simpleformatter
+    class D:
         """A class that assigns a custom external Formatter api object"""
         # TODO: figure out if this makes sense
         pass
@@ -144,7 +148,7 @@ def example_d(D):
     return D()
 
 
-### example fixture tests (does NOT test the api!!) ####################################################################
+# example fixture tests (does NOT test the api!!) ######################################################################
 
 @pytest.mark.parametrize("cls_name, formatter_name, spec", [
     ("A", "A.my_formatter", empty_str),
@@ -181,7 +185,7 @@ def test_formatter_function(cls_name, formatter_name, spec, A, example_a, B, exa
             assert formatter(obj) == result
 
 
-### api tests ##########################################################################################################
+# api tests ############################################################################################################
 
 @pytest.mark.parametrize("cls_name, spec", [
     ("A", empty_str),
@@ -220,7 +224,8 @@ def test_simpleformatter_api(cls_name, spec, A, example_a, B, example_b, C, exam
 def test_ambiguous_no_spec_inheritance(simpleformatter):
     """last defined spec wins with competing functions"""
 
-    class X(simpleformatter.SimpleFormattable):
+    @simpleformatter.simpleformatter
+    class X:
 
         @simpleformatter.simpleformatter
         def a(self):
@@ -230,16 +235,18 @@ def test_ambiguous_no_spec_inheritance(simpleformatter):
         def b(self):
             return "b"
 
-    assert f"{X()}"==X().b()
+    assert f"{X()}" == X().b()
 
+    @simpleformatter.simpleformatter
     class Y(X):
 
         @simpleformatter.simpleformatter
         def c(self):
             return "c"
 
-    assert f"{Y()}"==Y().c()
+    assert f"{Y()}" == Y().c()
 
+    @simpleformatter.simpleformatter
     class Z(Y):
 
         @simpleformatter.simpleformatter
@@ -250,13 +257,14 @@ def test_ambiguous_no_spec_inheritance(simpleformatter):
         def c(self):
             return "e"
 
-    assert f"{Z()}"=="e"
+    assert f"{Z()}" == "e"
 
 
 def test_ambiguous_competing(simpleformatter):
     """last defined spec wins with two competing functions for SAME format spec"""
 
-    class X(simpleformatter.SimpleFormattable):
+    @simpleformatter.simpleformatter
+    class X:
 
         @simpleformatter.simpleformatter(spec="spec")
         def a(self):
@@ -266,13 +274,14 @@ def test_ambiguous_competing(simpleformatter):
         def b(self):
             return "b"
 
-    assert f"{X():spec}"==X().b()
+    assert f"{X():spec}" == X().b()
 
 
 def test_ambiguous_special(simpleformatter):
     """last defined spec wins with two competing functions, one with no spec and one with empty_str spec"""
 
-    class X(simpleformatter.SimpleFormattable):
+    @simpleformatter.simpleformatter
+    class X:
 
         @simpleformatter.simpleformatter
         def a(self):
@@ -282,4 +291,4 @@ def test_ambiguous_special(simpleformatter):
         def b(self):
             return "b"
 
-    assert f"{X()}"==X().b()
+    assert f"{X()}" == X().b()
