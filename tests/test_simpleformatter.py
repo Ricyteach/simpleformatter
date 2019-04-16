@@ -217,40 +217,69 @@ def test_simpleformatter_api(cls_name, spec, A, example_a, B, example_b, C, exam
             assert f"{obj:{spec!s}}" == result
 
 
-def test_ambiguous_no_spec(simpleformatter):
-    """having two competing functions for no format spec is ambiguous"""
+def test_ambiguous_no_spec_inheritance(simpleformatter):
+    """last defined spec wins with competing functions"""
 
-    with pytest.raises(SimpleFormatterError):
-        class X(simpleformatter.SimpleFormattable):
+    class X(simpleformatter.SimpleFormattable):
 
-            @simpleformatter.simpleformatter
-            def a(self): ...
+        @simpleformatter.simpleformatter
+        def a(self):
+            return "a"
 
-            @simpleformatter.simpleformatter
-            def b(self): ...
+        @simpleformatter.simpleformatter
+        def b(self):
+            return "b"
+
+    assert f"{X()}"==X().b()
+
+    class Y(X):
+
+        @simpleformatter.simpleformatter
+        def c(self):
+            return "c"
+
+    assert f"{Y()}"==Y().c()
+
+    class Z(Y):
+
+        @simpleformatter.simpleformatter
+        def c(self):
+            return "d"
+
+        @simpleformatter.simpleformatter
+        def c(self):
+            return "e"
+
+    assert f"{Z()}"=="e"
 
 
 def test_ambiguous_competing(simpleformatter):
-    """having two competing functions for SAME format spec is ambiguous"""
+    """last defined spec wins with two competing functions for SAME format spec"""
 
-    with pytest.raises(SimpleFormatterError):
-        class X(simpleformatter.SimpleFormattable):
+    class X(simpleformatter.SimpleFormattable):
 
-            @simpleformatter.simpleformatter("spec")
-            def a(self): ...
+        @simpleformatter.simpleformatter(spec="spec")
+        def a(self):
+            return "a"
 
-            @simpleformatter.simpleformatter("spec")
-            def b(self): ...
+        @simpleformatter.simpleformatter(spec="spec")
+        def b(self):
+            return "b"
+
+    assert f"{X():spec}"==X().b()
 
 
 def test_ambiguous_special(simpleformatter):
-    """having two functions, one with no spec and one with empty_str spec is ambiguous"""
+    """last defined spec wins with two competing functions, one with no spec and one with empty_str spec"""
 
-    with pytest.raises(SimpleFormatterError):
-        class X(simpleformatter.SimpleFormattable):
+    class X(simpleformatter.SimpleFormattable):
 
-            @simpleformatter.simpleformatter
-            def a(self): ...
+        @simpleformatter.simpleformatter
+        def a(self):
+            return "a"
 
-            @simpleformatter.simpleformatter(empty_str)
-            def b(self): ...
+        @simpleformatter.simpleformatter(spec=empty_str)
+        def b(self):
+            return "b"
+
+    assert f"{X()}"==X().b()
