@@ -82,12 +82,12 @@ def B(simpleformatter):
         test_results["specialz"] = "class B object spec = 'specialyz'"
 
         @simpleformatter.simpleformatter
-        @simpleformatter.simpleformatter(spec="specialx")
+        @simpleformatter.simpleformatter("specialx")
         def specialx_formatter(self, spec):
             return f"class B object spec = {spec!r}"
 
-        @simpleformatter.simpleformatter(spec="specialy")
-        @simpleformatter.simpleformatter(spec="specialz")
+        @simpleformatter.simpleformatter("specialy")
+        @simpleformatter.simpleformatter("specialz")
         def specialyz_formatter(self):
             return str(self) + " spec = 'specialyz'"
 
@@ -119,9 +119,9 @@ def C(simpleformatter):
         test_results["specialy"] = "class C object spec = 'specialy'"
         test_results["specialz"] = "class C object spec = 'specialz'"
 
-        @simpleformatter.simpleformatter(spec="specialx")
-        @simpleformatter.simpleformatter(spec="specialy")
-        @simpleformatter.simpleformatter(spec="specialz")
+        @simpleformatter.simpleformatter("specialx")
+        @simpleformatter.simpleformatter("specialy")
+        @simpleformatter.simpleformatter("specialz")
         def special_formatter(self, spec):
             return f"class C object spec = {spec!r}"
 
@@ -141,7 +141,7 @@ def ex_c(C):
 @pytest.fixture
 def D(simpleformatter, my_formatter):
 
-    @simpleformatter.simpleformatter(spec="spec", func=my_formatter)
+    @simpleformatter.simpleformatter(spec=my_formatter)
     class D:
         """api decorated class, with externally defined formatting"""
         test_results = defaultdict(lambda: None)
@@ -219,11 +219,13 @@ def test_formatter_function(cls_name, formatter_name, spec, A, ex_a, B, ex_b, C,
         try:
             formatter(obj, spec)
         except TypeError:
+            # single argument
             formatter(obj)
     else:
         try:
             assert formatter(obj, spec) == result
         except TypeError:
+            # single argument
             assert formatter(obj) == result
 
 
@@ -255,15 +257,9 @@ def test_simpleformatter_api(cls_name, spec, A, ex_a, B, ex_b, C, ex_c, D, ex_d,
     result = cls.test_results[spec]
     if result is None:
         with pytest.raises(TypeError):
-            if spec is None:
-                f"{obj}"
-            else:
-                f"{obj:{spec!s}}"
+            f"{obj:{spec!s}}"
     else:
-        if spec is None:
-            assert f"{obj}" == result
-        else:
-            assert f"{obj:{spec!s}}" == result
+        assert f"{obj:{spec!s}}" == result
 
 
 def test_ambiguous_no_spec_and_inheritance(simpleformatter):
@@ -311,11 +307,11 @@ def test_ambiguous_competing(simpleformatter):
     @simpleformatter.simpleformatter
     class X:
 
-        @simpleformatter.simpleformatter(spec="spec")
+        @simpleformatter.simpleformatter("spec")
         def a(self):
             return "a"
 
-        @simpleformatter.simpleformatter(spec="spec")
+        @simpleformatter.simpleformatter("spec")
         def b(self):
             return "b"
 
@@ -332,7 +328,7 @@ def test_ambiguous_special(simpleformatter):
         def a(self):
             return "a"
 
-        @simpleformatter.simpleformatter(spec=empty_str)
+        @simpleformatter.simpleformatter(empty_str)
         def b(self):
             return "b"
 
