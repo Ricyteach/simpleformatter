@@ -62,7 +62,7 @@ def A(simpleformatter):
 
 
 @pytest.fixture
-def example_a(A):
+def ex_a(A):
     return A()
 
 
@@ -98,7 +98,7 @@ def B(simpleformatter):
 
 
 @pytest.fixture
-def example_b(B):
+def ex_b(B):
     return B()
 
 
@@ -133,24 +133,58 @@ def C(simpleformatter):
 
 
 @pytest.fixture
-def example_c(C):
+def ex_c(C):
     return C()
 
 
+# noinspection PyTypeChecker
 @pytest.fixture
-def D(simpleformatter):
-    @simpleformatter.simpleformatter
+def D(simpleformatter, my_formatter):
+
+    @simpleformatter.simpleformatter(spec="spec", func=my_formatter)
     class D:
-        """A class that assigns a custom external Formatter api object"""
-        # TODO: figure out if this makes sense
-        pass
+        """api decorated class, with externally defined formatting"""
+        test_results = defaultdict(lambda: None)
+
+        # parent formatter is == object.__format__ function (~equivalent to format() built-in)
+        test_results[empty_str] = "class D object"
+
+        # my_formatter expected results
+        test_results["spec"] = "class D object formatted"
+
+        # the object.__format__ function just returns obj.__str__
+        def __str__(self):
+            return "class D object"
 
     return D
 
 
 @pytest.fixture
-def example_d(D):
+def ex_d(D):
     return D()
+
+
+@pytest.fixture
+def E(simpleformatter):
+    @simpleformatter.simpleformatter
+    class E:
+        """A class that assigns a custom external Formatter api object"""
+        # TODO: figure out if this makes sense
+        pass
+
+    return E
+
+
+@pytest.fixture
+def ex_e(E):
+    return E()
+
+
+@pytest.fixture
+def my_formatter():
+    def my_formatter(obj, spec):
+        return f"class {type(obj).__qualname__[-1]} object formatted"
+    return my_formatter
 
 
 # example fixture tests (does NOT test the api!!); verify formatter functions are "working" ############################
@@ -166,15 +200,18 @@ def example_d(D):
     ("C", "C.special_formatter", "specialx"),
     ("C", "C.special_formatter", "specialy"),
     ("C", "C.special_formatter", "specialz"),
+    ("D", "format", empty_str),  # no argument to simpleformatter decorator == empty_str format spec
+    ("D", "my_formatter", "spec"),
 ], ids=[
     "A.my_formatter empty_str", "A.my_formatter 'spec'",
     "B.my_formatter empty_str", "B.specialx_formatter", "B.specialyz_formatter y", "B.specialyz_formatter z",
     "C.my_formatter empty_str", "C.special_formatter x", "C.special_formatter y", "C.special_formatter z",
+    "D -> my_formatter empty_str", "D -> my_formatter 'spec'",
 ])
-def test_formatter_function(cls_name, formatter_name, spec, A, example_a, B, example_b, C, example_c):
+def test_formatter_function(cls_name, formatter_name, spec, A, ex_a, B, ex_b, C, ex_c, D, ex_d, my_formatter):
     """Does not test the api!!!! Makes sure the formatter_name functions for test suite example classes are working"""
     cls = eval(cls_name)
-    obj = eval(f"example_{cls_name.lower()}")
+    obj = eval(f"ex_{cls_name.lower()}")
     formatter = eval(formatter_name)
     result = cls.test_results[spec]
     if result is None:
@@ -203,15 +240,18 @@ def test_formatter_function(cls_name, formatter_name, spec, A, example_a, B, exa
     ("C", "specialx"),
     ("C", "specialy"),
     ("C", "specialz"),
+    ("D", empty_str),  # no argument to simpleformatter decorator == empty_str format spec
+    ("D", "spec"),
 ], ids=[
     "A.my_formatter empty_str", "A.my_formatter 'spec'",
     "B.my_formatter empty_str", "B.specialx_formatter", "B.specialyz_formatter y", "B.specialyz_formatter z",
     "C.my_formatter empty_str", "C.special_formatter x", "C.special_formatter y", "C.special_formatter z",
+    "D -> my_formatter empty_str", "D -> my_formatter 'spec'",
 ])
-def test_simpleformatter_api(cls_name, spec, A, example_a, B, example_b, C, example_c):
+def test_simpleformatter_api(cls_name, spec, A, ex_a, B, ex_b, C, ex_c, D, ex_d, my_formatter):
     """The actual api tested here"""
     cls = eval(cls_name)
-    obj = eval(f"example_{cls_name.lower()}")
+    obj = eval(f"ex_{cls_name.lower()}")
     result = cls.test_results[spec]
     if result is None:
         with pytest.raises(TypeError):
