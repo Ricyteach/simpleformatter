@@ -149,19 +149,37 @@ def _formatter_func_decorator(pos1, specs):
     return _negotiate_decorator(mark_simpleformatter_spec, pos1)
 
 
-def simpleformatter(pos1=NO_ARG, *specs, formatter_dict=None, **formatter_kwargs):
+def simpleformatter(*specs, formatter_dict=None, **formatter_kwargs):
     """simpleformatter api decorator"""
 
-    if pos1 is not NO_ARG and isinstance(pos1, str):
-        # relocate first argument to specs when it is a spec string
-        # this assumes decorator was applied like:
+    # determine how decorator was applied
+    to_decorate = NO_ARG
+
+    try:
+        # extract first argument to test if it is a spec string
+        pos1, *specs = specs
+    except ValueError:
+        # assume decorator was applied like:
         #
-        #    @simpleformatter.simpleformatter("spec1", "spec2")
-        #    def format_handler(self): ...
-        to_decorate, specs = NO_ARG, (pos1, *specs)
+        #    @simpleformatter.simpleformatter(spec=func)
+        #    class C: ...
+        pass
     else:
-        # first argument is either a class or function/method
-        to_decorate = pos1
+        if isinstance(pos1, str):
+            # assume decorator was applied like:
+            #
+            #    @simpleformatter.simpleformatter("spec1", "spec2")
+            #    def format_handler(self): ...
+            specs = pos1, *specs
+        else:
+            # assume first argument is either a class or function/method:
+            #
+            #    @simpleformatter.simpleformatter
+            #    class C: ...
+            #
+            #    @simpleformatter.simpleformatter
+            #    def f(obj): ...
+            to_decorate = pos1
 
     def api_decorator(cls_or_func):
         """Actual decorator; cls_or_func is either a class or function/method"""
