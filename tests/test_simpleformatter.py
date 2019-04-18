@@ -8,20 +8,6 @@ import pytest
 
 empty_str = ""  # for readability
 
-
-@pytest.fixture
-def simpleformatter():
-    """reimport fresh copy of the module each time"""
-    import simpleformatter
-    return simpleformatter
-
-
-@pytest.fixture
-def SimpleFormatterError(simpleformatter):
-    from simpleformatter.simpleformatter import SimpleFormatterError
-    return SimpleFormatterError
-
-
 # example api implementation fixtures ##################################################################################
 #
 # NOTE: each example class fixture has its own test_results dictionary (defaultdict) that contains the expected test
