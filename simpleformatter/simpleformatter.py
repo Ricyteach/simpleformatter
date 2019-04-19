@@ -11,6 +11,7 @@ default_type_error_msg = "unsupported format string passed to {cls.__qualname__}
 empty_str = ""  # for readability
 SPECS_HOLDER_ATTR = "_simpleformatter_specs"  # might change this later?
 SPECS_REG_DICT = "_simpleformatter_registry"
+UNIV_REG = dict()
 
 
 class NoArgType:
@@ -71,8 +72,8 @@ def _wrap_cls__format__(cls):
     cls.__format__, cls._default__format__ = deepcopy(_new__format__), deepcopy(cls.__format__)
 
 
-def _lookup_formatter(cls, format_spec):
-    """Gets the corresponding formatting function, raises SimpleFormatterError if one isn't found"""
+def _lookup_cls_formatter(cls, format_spec):
+    """Gets the corresponding class formatting function, raises SimpleFormatterError if one isn't found"""
 
     for cls_obj in cls.__mro__:
         try:
@@ -81,6 +82,25 @@ def _lookup_formatter(cls, format_spec):
             continue
 
     raise SimpleFormatterError(f"no {format_spec!r} format_spec found for {cls.__qualname__} class")
+
+
+def _lookup_univ_cls_formatter(format_spec):
+    """Gets the corresponding universal formatting function, raises SimpleFormatterError if one isn't found"""
+    try:
+        return UNIV_REG[format_spec]
+    except KeyError:
+        raise SimpleFormatterError(f"no {format_spec!r} format_spec found in universal registry")
+
+
+def _lookup_formatter(cls, format_spec):
+    """Gets the corresponding formatting function, raises SimpleFormatterError if one isn't found"""
+    try:
+        return _lookup_cls_formatter(cls, format_spec)
+    except SimpleFormatterError as e1:
+        try:
+            return _lookup_univ_cls_formatter(format_spec)
+        except SimpleFormatterError as e2:
+            raise SimpleFormatterError(f"no {format_spec!r} format_spec found")
 
 
 def _register_all_formatters(cls):
