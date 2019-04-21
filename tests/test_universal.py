@@ -4,19 +4,14 @@ import pytest
 
 
 @pytest.fixture
-def simpleformatter(simpleformatter):
-    return simpleformatter.simpleformatter
-
-
-@pytest.fixture
-def univ_formatter1():
+def gen_fmtr_func1():
     def univ_formatter1(obj, spec):
         return f"{obj!s} with univ spec #1 = {spec!r}"
     return univ_formatter1
 
 
 @pytest.fixture
-def univ_formatter2():
+def gen_fmtr_func2():
     def univ_formatter2(obj, spec):
         return f"{obj!s} with univ spec #2 = {spec!r}"
     return univ_formatter2
@@ -33,27 +28,27 @@ def A():
 
 
 @pytest.fixture
-def A_first(simpleformatter, A):
+def A_first(formattable, A):
     """class A decorated first"""
-    return simpleformatter(A)
+    return formattable(A)
 
 
 @pytest.fixture
-def formatters_first(simpleformatter, univ_formatter1, univ_formatter2):
+def formatters_first(function, gen_fmtr_func1, gen_fmtr_func2):
     """Formatter functions decorated first"""
-    return simpleformatter("spec1")(univ_formatter1), simpleformatter(univ_formatter2, "spec2")
+    return function("spec1")(gen_fmtr_func1), function(gen_fmtr_func2, "spec2")
 
 
 @pytest.fixture
-def A_last(simpleformatter, formatters_first, A):
+def A_last(formattable, formatters_first, A):
     """class A decorated last"""
-    return simpleformatter(A)
+    return formattable(A)
 
 
 @pytest.fixture
-def formatters_last(simpleformatter, A_first, univ_formatter1, univ_formatter2):
+def formatters_last(function, A_first, gen_fmtr_func1, gen_fmtr_func2):
     """Formatter functions decorated last"""
-    return simpleformatter("spec1")(univ_formatter1), simpleformatter(univ_formatter2, "spec2")
+    return function("spec1")(gen_fmtr_func1), function(gen_fmtr_func2, "spec2")
 
 
 @pytest.mark.parametrize("spec", [

@@ -17,3 +17,19 @@ def simpleformatter():
 def SimpleFormatterError(simpleformatter):
     from simpleformatter.simpleformatter import SimpleFormatterError
     return SimpleFormatterError
+
+@pytest.fixture
+def formattable(simpleformatter):
+    return simpleformatter.formattable
+
+
+@pytest.fixture
+def method(simpleformatter):
+    return simpleformatter.method
+
+
+@pytest.fixture
+def function(simpleformatter):
+    return simpleformatter.function
+
+
