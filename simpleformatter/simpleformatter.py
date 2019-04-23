@@ -14,7 +14,6 @@ empty_str = ""  # for readability
 GEN_SPECS_ATTR = "_simpleformatter_general_specs"  # formatting function attribute holding a set of specs that use it
 METH_SPECS_ATTR = "_simpleformatter_method_specs"  # formatting function attribute holding a set of specs that use it
 CLS_REG_ATTR = "_simpleformatter_registry"  # formattable class attr holding registry
-GEN_REG = dict()  # general registry holds spec: function pairs applicable to general scope (all formattable types)
 
 
 class NoArgType:
@@ -52,7 +51,7 @@ def _get_cls_registry(cls):
         raise SimpleFormatterError(f"{cls.__qualname__} class has no {CLS_REG_ATTR} registry") from e
 
 
-def _wrap_cls__format__(cls):
+def _wrap_cls__format__(simpleformatter, cls):
     """Private function to decorate cls.__format__ function"""
 
     @functools.wraps(cls.__format__)
@@ -60,7 +59,7 @@ def _wrap_cls__format__(cls):
         """Wrapper for the cls.__format__ method; falls back on default behavior when no formatter found"""
 
         try:
-            formatter = _lookup_formatter(cls, format_spec)
+            formatter = _lookup_formatter(simpleformatter, cls, format_spec)
         except SimpleFormatterError as e1:
             try:
                 # formatter not found for format_spec; attempt fall back on default __format__ functionality
@@ -93,21 +92,21 @@ def _lookup_cls_formatter(cls, format_spec):
     raise SimpleFormatterError(f"no {format_spec!r} format_spec found for {cls.__qualname__} class")
 
 
-def _lookup_general_formatter(format_spec):
+def _lookup_general_formatter(simpleformatter, format_spec):
     """Gets the corresponding general formatting function, raises SimpleFormatterError if one isn't found"""
     try:
-        return GEN_REG[format_spec]
+        return simpleformatter.gen_reg[format_spec]
     except KeyError:
         raise SimpleFormatterError(f"no {format_spec!r} format_spec found in general registry")
 
 
-def _lookup_formatter(cls, format_spec):
+def _lookup_formatter(simpleformatter, cls, format_spec):
     """Gets the corresponding formatting function, raises SimpleFormatterError if one isn't found"""
     try:
         return _lookup_cls_formatter(cls, format_spec)
     except SimpleFormatterError as e1:
         try:
-            return _lookup_general_formatter(format_spec)
+            return _lookup_general_formatter(simpleformatter, format_spec)
         except SimpleFormatterError as e2:
             raise SimpleFormatterError(f"no {format_spec!r} format_spec found")
 
@@ -136,7 +135,7 @@ def _register_formatters(formatter_dict, registry):
     registry.update(formatter_dict)
 
 
-def _class_decorator(pos1, formatter_dict):
+def _class_decorator(simpleformatter, pos1, formatter_dict):
     """Private decorator for adding customized __format__ method and formatter registry to class."""
     # TODO: implement spec/formatter handling on the class level:
     #   @simpleformatter(spec="spec", func=spec_handler)
@@ -146,7 +145,7 @@ def _class_decorator(pos1, formatter_dict):
         _add_registry(cls, formatter_dict)
         _register_all_formatters(cls)
         _check_for_general_formatters(cls)
-        _wrap_cls__format__(cls)
+        _wrap_cls__format__(simpleformatter, cls)
         return cls
 
     return _negotiate_decorator(wrap_cls__format__, pos1)
@@ -244,72 +243,57 @@ def _callable_decorator(*specs, callable_registry=None):
     return _negotiate_decorator(decorator_inner, to_decorate)
 
 
-"""api decorators
-
-The api decorators are formattable, method, and function
-
-Examples:
-
-    @function("spec_f1", "spec_f2")
-    def fmtr(): ...
-    
-    @formattable
-    class A: ...
-    
-    @formattable
-    class B: ...
-      @method("spec_m1", "spec_m2")
-      def fmtr(): ...
-    
-    >>> f"{A():spec_f1}"
-    >>> f"{A():spec_f2}"
-    >>> f"{B():spec_m1}"
-    >>> f"{B():spec_m2}"
-    >>> f"{B():spec_f1}"
-    >>> f"{B():spec_f2}"
-"""
+class GenReg:
+    def __get__(self):
+        """general registry holds spec: function pairs applicable to general scope (all formattable types)"""
+        try:
+            reg = self._gen_reg
+        except AttributeError:
+            reg = self._gen_reg = dict()
+        return reg
 
 
-def function(*specs):
-    """simpleformatter api decorator for non-method functions
+class SimpleFormatter:
+    gen_reg = GenReg()
 
-    raises SimpleFormatterError if applied to a formattable class method (use function decorated instead)
-    """
+    def function(self, *specs):
+        """simpleformatter api decorator for non-method functions
 
-    # non-method functions are tracked in the general registry
-    return _callable_decorator(*specs, callable_registry=GEN_REG)
+        raises SimpleFormatterError if applied to a formattable class method (use function decorated instead)
+        """
 
+        # non-method functions are tracked in the general registry
+        return _callable_decorator(*specs, callable_registry=self.gen_reg)
 
-def method(*specs, cls=None):
-    """simpleformatter api decorator for methods of formattable classes; monkey patched methods must specify the cls"""
+    def method(self, *specs, cls=None):
+        """simpleformatter api decorator for methods of formattable classes; monkey patched methods must specify the cls"""
 
-    # the method's class cannot be known at runtime so we will track method functions in their rspective class
-    # registries (ie, not callable_registry kwarg supplied to _callable_decorator)
-    return _callable_decorator(*specs)
+        # the method's class cannot be known at runtime so we will track method functions in their rspective class
+        # registries (ie, not callable_registry kwarg supplied to _callable_decorator)
+        return _callable_decorator(*specs)
 
+    def formattable(self, cls=NO_ARG, *, formatter_dict=None, **formatter_kwargs):
+        """simpleformatter api decorator for classes"""
 
-def formattable(cls=NO_ARG, *, formatter_dict=None, **formatter_kwargs):
-    """simpleformatter api decorator for classes"""
+        # in case someone erroneously puts the formatter_dict as positional argument
+        if not isinstance(cls, (type, NoArgType)):
+            raise TypeError(f"cls not a type; decorator erroneously applied to a {cls.__qualname__} object")
 
-    # in case someone erroneously puts the formatter_dict as positional argument
-    if not isinstance(cls, (type, NoArgType)):
-        raise TypeError(f"cls not a type; decorator erroneously applied to a {cls.__qualname__} object")
+        def api_decorator(cls_arg):
+            """Actual decorator; cls_arg is a type"""
 
-    def api_decorator(cls_arg):
-        """Actual decorator; cls_arg is a type"""
+            nonlocal formatter_dict, formatter_kwargs
 
-        nonlocal formatter_dict, formatter_kwargs
+            if not isinstance(cls_arg, type):
+                raise SimpleFormatterError(f"{SimpleFormatter.formattable.__name__} decorator should only be used when decorating a class")
 
-        if not isinstance(cls_arg, type):
-            raise SimpleFormatterError(f"{formattable.__name__} decorator should only be used when decorating a class")
+            if formatter_dict is None:
+                formatter_dict = dict(**formatter_kwargs)
+            else:
+                formatter_dict.update(**formatter_kwargs)
+            return _class_decorator(self, cls_arg, formatter_dict)
 
-        if formatter_dict is None:
-            formatter_dict = dict(**formatter_kwargs)
-        else:
-            formatter_dict.update(**formatter_kwargs)
-        return _class_decorator(cls_arg, formatter_dict)
-
-    return _negotiate_decorator(api_decorator, cls)
+        return _negotiate_decorator(api_decorator, cls)
 
 
 class SimpleFormatterError(Exception):
