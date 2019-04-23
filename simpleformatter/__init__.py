@@ -6,7 +6,7 @@ __author__ = """Ricky L Teachey Jr"""
 __email__ = 'ricky@teachey.org'
 __version__ = '0.1.0'
 
-from .simpleformatter import simpleformatter
+from .simpleformatter import formattable, method, function
 
 # Set default logging handler to avoid "No handler found" warnings.
 import logging

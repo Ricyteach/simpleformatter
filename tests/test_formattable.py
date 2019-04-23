@@ -25,7 +25,7 @@ empty_str = ""  # for readability
 
 @pytest.fixture
 def A(simpleformatter):
-    @simpleformatter.simpleformatter
+    @simpleformatter.formattable
     class A:
         """A class that has a custom formatting function decorated by simpleformatter
 
@@ -37,7 +37,7 @@ def A(simpleformatter):
         # my_formatter expected results
         test_results[empty_str] = "class A object formatted"  # no spec argument equivalent to empty_str
 
-        @simpleformatter.simpleformatter  # no spec argument equivalent to empty_str
+        @simpleformatter.method  # no spec argument equivalent to empty_str
         def my_formatter(self):
             return str(self) + " formatted"
 
@@ -54,7 +54,7 @@ def ex_a(A):
 
 @pytest.fixture
 def B(simpleformatter):
-    @simpleformatter.simpleformatter
+    @simpleformatter.formattable
     class B:
         """A class that has doubly decorated custom formatting functions, different with specs"""
         test_results = defaultdict(lambda: None)
@@ -67,13 +67,13 @@ def B(simpleformatter):
         test_results["specialy"] = "class B object spec = 'specialyz'"
         test_results["specialz"] = "class B object spec = 'specialyz'"
 
-        @simpleformatter.simpleformatter
-        @simpleformatter.simpleformatter("specialx")
+        @simpleformatter.method
+        @simpleformatter.method("specialx")
         def specialx_formatter(self, spec):
             return f"class B object spec = {spec!r}"
 
-        @simpleformatter.simpleformatter("specialy")
-        @simpleformatter.simpleformatter("specialz")
+        @simpleformatter.method("specialy")
+        @simpleformatter.method("specialz")
         def specialyz_formatter(self):
             return str(self) + " spec = 'specialyz'"
 
@@ -90,7 +90,7 @@ def ex_b(B):
 
 @pytest.fixture
 def C(simpleformatter):
-    @simpleformatter.simpleformatter
+    @simpleformatter.formattable
     class C:
         """A class that has multiple-decorated custom formatting function
 
@@ -105,9 +105,9 @@ def C(simpleformatter):
         test_results["specialy"] = "class C object spec = 'specialy'"
         test_results["specialz"] = "class C object spec = 'specialz'"
 
-        @simpleformatter.simpleformatter("specialx")
-        @simpleformatter.simpleformatter("specialy")
-        @simpleformatter.simpleformatter("specialz")
+        @simpleformatter.method("specialx")
+        @simpleformatter.method("specialy")
+        @simpleformatter.method("specialz")
         def special_formatter(self, spec):
             return f"class C object spec = {spec!r}"
 
@@ -127,7 +127,7 @@ def ex_c(C):
 @pytest.fixture
 def D(simpleformatter, my_formatter):
 
-    @simpleformatter.simpleformatter(spec=my_formatter)
+    @simpleformatter.formattable(spec=my_formatter)
     class D:
         """api decorated class, with externally defined formatting"""
         test_results = defaultdict(lambda: None)
@@ -152,7 +152,7 @@ def ex_d(D):
 
 @pytest.fixture
 def E(simpleformatter):
-    @simpleformatter.simpleformatter
+    @simpleformatter.formattable
     class E:
         """A class that assigns a custom external Formatter api object"""
         # TODO: figure out if this makes sense
@@ -251,36 +251,36 @@ def test_simpleformatter_api(cls_name, spec, A, ex_a, B, ex_b, C, ex_c, D, ex_d,
 def test_ambiguous_no_spec_and_inheritance(simpleformatter):
     """last defined spec wins with competing functions"""
 
-    @simpleformatter.simpleformatter
+    @simpleformatter.formattable
     class X:
 
-        @simpleformatter.simpleformatter
+        @simpleformatter.method
         def a(self):
             return "a"
 
-        @simpleformatter.simpleformatter
+        @simpleformatter.method
         def b(self):
             return "b"
 
     assert f"{X()}" == X().b()
 
-    @simpleformatter.simpleformatter
+    @simpleformatter.formattable
     class Y(X):
 
-        @simpleformatter.simpleformatter
+        @simpleformatter.method
         def c(self):
             return "c"
 
     assert f"{Y()}" == Y().c()
 
-    @simpleformatter.simpleformatter
+    @simpleformatter.formattable
     class Z(Y):
 
-        @simpleformatter.simpleformatter
+        @simpleformatter.method
         def c(self):
             return "d"
 
-        @simpleformatter.simpleformatter
+        @simpleformatter.method
         def c(self):
             return "e"
 
@@ -290,14 +290,14 @@ def test_ambiguous_no_spec_and_inheritance(simpleformatter):
 def test_ambiguous_competing(simpleformatter):
     """last defined spec wins with two competing functions for SAME format spec"""
 
-    @simpleformatter.simpleformatter
+    @simpleformatter.formattable
     class X:
 
-        @simpleformatter.simpleformatter("spec")
+        @simpleformatter.method("spec")
         def a(self):
             return "a"
 
-        @simpleformatter.simpleformatter("spec")
+        @simpleformatter.method("spec")
         def b(self):
             return "b"
 
@@ -307,14 +307,14 @@ def test_ambiguous_competing(simpleformatter):
 def test_ambiguous_special(simpleformatter):
     """last defined spec wins with two competing functions, one with no spec and one with empty_str spec"""
 
-    @simpleformatter.simpleformatter
+    @simpleformatter.formattable
     class X:
 
-        @simpleformatter.simpleformatter
+        @simpleformatter.method
         def a(self):
             return "a"
 
-        @simpleformatter.simpleformatter(empty_str)
+        @simpleformatter.method(empty_str)
         def b(self):
             return "b"
 
