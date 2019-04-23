@@ -35,7 +35,13 @@ def _negotiate_decorator(dec, pos1):
 
 def _add_registry(cls, reg):
     """Attach a formatter registry to the class object"""
-    setattr(cls, CLS_REG_ATTR, reg)
+    try:
+        setattr(cls, CLS_REG_ATTR, reg)
+    except TypeError as e:
+        import builtins
+        if cls in vars(builtins).values():
+            raise TypeError(f"the {cls!s} builtin cannot be modified with simpleformatter functionality") from e
+        raise e
 
 
 def _get_cls_registry(cls):

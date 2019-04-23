@@ -69,3 +69,40 @@ def test_class_first(a_first, formatters_last, spec):
 def test_formatters_first(a_last, formatters_first, spec):
     f"{a_last:{''}}"
     assert f"{a_last:{spec!s}}" == a_last.test_results[spec]
+
+
+def test_wrong_use_of_function(formattable, function):
+    """Class methods should be decorat"""
+    with pytest.raises(TypeError):
+        @formattable
+        class X:
+            @function
+            def x(self):
+                ...
+
+@pytest.mark.parametrize("bad_arg", [
+    None, 1, type,
+], ids= ("NoneType", "int", "type"))
+def test_str_only_spec(bad_arg, function, method, formattable):
+    """format specs must be strings (might change this requirement later...?)"""
+    with pytest.raises(TypeError):
+        @function(bad_arg)
+        def f(): ...
+    with pytest.raises(TypeError):
+        @formattable
+        class X:
+            @method(bad_arg)
+            def f(self): ...
+
+
+def test_not_callable(function, method):
+    """function and method decorators apply only to callables"""
+    with pytest.raises(TypeError):
+        function(1)
+    with pytest.raises(TypeError):
+        method(1)
+
+
+def test_not_type(formattable):
+    with pytest.raises(TypeError):
+        formattable(int)
