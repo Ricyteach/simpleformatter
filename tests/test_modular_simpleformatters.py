@@ -29,7 +29,7 @@ def obj1(sf1):
 
 @pytest.fixture
 def func1(sf1):
-    @sf1.function
+    @sf1.function("", "spec")
     def f1(obj):
         return "f1"
     return f1
@@ -44,12 +44,16 @@ def obj2(sf2):
 
 @pytest.fixture
 def func2(sf2):
-    @sf2.function
+    @sf2.function("", "spec")
     def f2(obj):
         return "f2"
     return f2
 
 
-def test_modular(obj1, func1, obj2, func2):
-    assert f"{obj1}" == "f1"
-    assert f"{obj2}" == "f2"
+@pytest.mark.parametrize("spec", [
+    "spec", "",
+], ids= ["spec", "empty_str"])
+def test_modular(spec, obj1, func1, obj2, func2):
+    """make sure sf1 and sf2 format things independently of each other"""
+    assert f"{obj1:{spec}}" == "f1"
+    assert f"{obj2:{spec}}" == "f2"
