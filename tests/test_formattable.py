@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Tests for `simpleformatter` package."""
+"""Tests for `simpleformatter.formattable` and `simpleformatter.method` decorator usage."""
 
 from collections import defaultdict
 import pytest

@@ -244,13 +244,16 @@ def _callable_decorator(*specs, callable_registry=None):
 
 
 class GenReg:
-    def __get__(self):
+    def __get__(self, instance, owner):
         """general registry holds spec: function pairs applicable to general scope (all formattable types)"""
-        try:
-            reg = self._gen_reg
-        except AttributeError:
-            reg = self._gen_reg = dict()
-        return reg
+        if instance is not None:
+            try:
+                reg = self._gen_reg
+            except AttributeError:
+                reg = self._gen_reg = dict()
+            return reg
+        else:
+            return self
 
 
 class SimpleFormatter:
