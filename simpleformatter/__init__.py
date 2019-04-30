@@ -6,7 +6,7 @@ The api decorators are formattable, method, and function
 
 Examples:
 
-    >>> @function("spec_f1", "spec_f2")
+    >>> @target("spec_f1", "spec_f2")
     >>> def fmtr(): ...
 
     >>> @formattable
@@ -14,7 +14,7 @@ Examples:
 
     >>> @formattable
     >>> class B: ...
-    >>>     @method("spec_m1", "spec_m2")
+    >>>     @formatmethod("spec_m1", "spec_m2")
     >>>     def fmtr(self): ...
 
     >>> f"{A():spec_f1}"
@@ -30,12 +30,11 @@ __author__ = """Ricky L Teachey Jr"""
 __email__ = 'ricky@teachey.org'
 __version__ = '0.1.0'
 
-from .simpleformatter import SimpleFormatter
+from .simpleformatter import SimpleFormatter, formatmethod
 
 simpleformatter = SimpleFormatter()
 formattable = simpleformatter.formattable
-method = simpleformatter.method
-function = simpleformatter.function
+target = simpleformatter.target
 
 # Set default logging handler to avoid "No handler found" warnings.
 import logging

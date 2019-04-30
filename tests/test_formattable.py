@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Tests for `simpleformatter.formattable` and `simpleformatter.method` decorator usage."""
+"""Tests for `simpleformatter.formattable` and `simpleformatter.formatmethod` decorator usage."""
 
 from collections import defaultdict
 import pytest
@@ -19,7 +19,7 @@ empty_str = ""  # for readability
 #                   test_results["bar"] = "barred result"
 #
 # The dictionary returns None for a format_spec that isn't expected; when a format_spec isn't expected, behavior falls
-# back on default/parent behavior upon application of the formatter function (such as format, an f-string, a Formatter,
+# back on default/parent behavior upon application of the formatter target (such as format, an f-string, a Formatter,
 # or string.format). If fallback behavior raises an exception, the exception will raise *FROM* a SimpleFormatterError.
 
 
@@ -27,17 +27,17 @@ empty_str = ""  # for readability
 def A(simpleformatter):
     @simpleformatter.formattable
     class A:
-        """A class that has a custom formatting function decorated by simpleformatter
+        """A class that has a custom formatting target decorated by simpleformatter
 
         the uncalled decorator means the default format spec, which is empty_str
 
-        the function accepts only a self argument (ie, it expects no spec argument)"""
+        the target accepts only a self argument (ie, it expects no spec argument)"""
         test_results = defaultdict(lambda: None)
 
         # my_formatter expected results
         test_results[empty_str] = "class A object formatted"  # no spec argument equivalent to empty_str
 
-        @simpleformatter.method  # no spec argument equivalent to empty_str
+        @simpleformatter.formatmethod  # no spec argument equivalent to empty_str
         def my_formatter(self):
             return str(self) + " formatted"
 
@@ -67,13 +67,13 @@ def B(simpleformatter):
         test_results["specialy"] = "class B object spec = 'specialyz'"
         test_results["specialz"] = "class B object spec = 'specialyz'"
 
-        @simpleformatter.method
-        @simpleformatter.method("specialx")
+        @simpleformatter.formatmethod
+        @simpleformatter.formatmethod("specialx")
         def specialx_formatter(self, spec):
             return f"class B object spec = {spec!r}"
 
-        @simpleformatter.method("specialy")
-        @simpleformatter.method("specialz")
+        @simpleformatter.formatmethod("specialy")
+        @simpleformatter.formatmethod("specialz")
         def specialyz_formatter(self):
             return str(self) + " spec = 'specialyz'"
 
@@ -92,12 +92,12 @@ def ex_b(B):
 def C(simpleformatter):
     @simpleformatter.formattable
     class C:
-        """A class that has multiple-decorated custom formatting function
+        """A class that has multiple-decorated custom formatmethods
 
         for this one, the empty_str spec falls back on default __format__ functionality"""
         test_results = defaultdict(lambda: None)
 
-        # parent formatter is == object.__format__ function (~equivalent to format() built-in)
+        # parent formatter is == object.__format__ target (~equivalent to format() built-in)
         test_results[""] = "class C object"
 
         # special_formatter expected results
@@ -105,13 +105,13 @@ def C(simpleformatter):
         test_results["specialy"] = "class C object spec = 'specialy'"
         test_results["specialz"] = "class C object spec = 'specialz'"
 
-        @simpleformatter.method("specialx")
-        @simpleformatter.method("specialy")
-        @simpleformatter.method("specialz")
+        @simpleformatter.formatmethod("specialx")
+        @simpleformatter.formatmethod("specialy")
+        @simpleformatter.formatmethod("specialz")
         def special_formatter(self, spec):
             return f"class C object spec = {spec!r}"
 
-        # the object.__format__ function just returns obj.__str__
+        # the object.__format__ target just returns obj.__str__
         def __str__(self):
             return "class C object"
 
@@ -132,13 +132,13 @@ def D(simpleformatter, my_formatter):
         """api decorated class, with externally defined formatting"""
         test_results = defaultdict(lambda: None)
 
-        # parent formatter is == object.__format__ function (~equivalent to format() built-in)
+        # parent formatter is == object.__format__ target (~equivalent to format() built-in)
         test_results[empty_str] = "class D object"
 
         # my_formatter expected results
         test_results["spec"] = "class D object formatted"
 
-        # the object.__format__ function just returns obj.__str__
+        # the object.__format__ target just returns obj.__str__
         def __str__(self):
             return "class D object"
 
@@ -182,7 +182,7 @@ def my_formatter():
     ("B", "B.specialx_formatter", "specialx"),
     ("B", "B.specialyz_formatter", "specialy"),
     ("B", "B.specialyz_formatter", "specialz"),
-    ("C", "format", empty_str),  # parent formatter is == format function
+    ("C", "format", empty_str),  # parent formatter is == format target
     ("C", "C.special_formatter", "specialx"),
     ("C", "C.special_formatter", "specialy"),
     ("C", "C.special_formatter", "specialz"),
@@ -224,7 +224,7 @@ def test_formatter_function(cls_name, formatter_name, spec, A, ex_a, B, ex_b, C,
     ("B", "specialx"),
     ("B", "specialy"),
     ("B", "specialz"),
-    ("C", empty_str),  # parent formatter is == format function
+    ("C", empty_str),  # parent formatter is == format target
     ("C", "specialx"),
     ("C", "specialy"),
     ("C", "specialz"),
@@ -254,11 +254,11 @@ def test_ambiguous_no_spec_and_inheritance(simpleformatter):
     @simpleformatter.formattable
     class X:
 
-        @simpleformatter.method
+        @simpleformatter.formatmethod
         def a(self):
             return "a"
 
-        @simpleformatter.method
+        @simpleformatter.formatmethod
         def b(self):
             return "b"
 
@@ -267,7 +267,7 @@ def test_ambiguous_no_spec_and_inheritance(simpleformatter):
     @simpleformatter.formattable
     class Y(X):
 
-        @simpleformatter.method
+        @simpleformatter.formatmethod
         def c(self):
             return "c"
 
@@ -276,11 +276,11 @@ def test_ambiguous_no_spec_and_inheritance(simpleformatter):
     @simpleformatter.formattable
     class Z(Y):
 
-        @simpleformatter.method
+        @simpleformatter.formatmethod
         def c(self):
             return "d"
 
-        @simpleformatter.method
+        @simpleformatter.formatmethod
         def c(self):
             return "e"
 
@@ -293,11 +293,11 @@ def test_ambiguous_competing(simpleformatter):
     @simpleformatter.formattable
     class X:
 
-        @simpleformatter.method("spec")
+        @simpleformatter.formatmethod("spec")
         def a(self):
             return "a"
 
-        @simpleformatter.method("spec")
+        @simpleformatter.formatmethod("spec")
         def b(self):
             return "b"
 
@@ -310,11 +310,11 @@ def test_ambiguous_special(simpleformatter):
     @simpleformatter.formattable
     class X:
 
-        @simpleformatter.method
+        @simpleformatter.formatmethod
         def a(self):
             return "a"
 
-        @simpleformatter.method(empty_str)
+        @simpleformatter.formatmethod(empty_str)
         def b(self):
             return "b"
 

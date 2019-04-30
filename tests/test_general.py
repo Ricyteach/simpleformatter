@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Tests for `simpleformatter.function` decorator usage."""
+"""Tests for `simpleformatter.target` decorator usage."""
 
 from collections import defaultdict
 
@@ -40,9 +40,9 @@ def a_first(formattable, A):
 
 
 @pytest.fixture
-def formatters_first(function, gen_fmtr_func1, gen_fmtr_func2):
+def formatters_first(target, gen_fmtr_func1, gen_fmtr_func2):
     """Formatter functions decorated first"""
-    return function("spec1")(gen_fmtr_func1), function(gen_fmtr_func2, "spec2")
+    return target("spec1")(gen_fmtr_func1), target(gen_fmtr_func2, "spec2")
 
 
 @pytest.fixture
@@ -52,9 +52,9 @@ def a_last(formattable, formatters_first, A):
 
 
 @pytest.fixture
-def formatters_last(function, a_first, gen_fmtr_func1, gen_fmtr_func2):
+def formatters_last(target, a_first, gen_fmtr_func1, gen_fmtr_func2):
     """Formatter functions decorated last"""
-    return function("spec1")(gen_fmtr_func1), function(gen_fmtr_func2, "spec2")
+    return target("spec1")(gen_fmtr_func1), target(gen_fmtr_func2, "spec2")
 
 
 @pytest.mark.parametrize("spec", [
@@ -76,36 +76,36 @@ def test_formatters_first(a_last, formatters_first, spec):
     assert f"{a_last:{spec!s}}" == a_last.test_results[spec]
 
 
-def test_wrong_use_of_function(formattable, function):
+def test_wrong_use_of_function(formattable, target):
     """Class methods should be decorat"""
     with pytest.raises(TypeError):
         @formattable
         class X:
-            @function
+            @target
             def x(self):
                 ...
 
 @pytest.mark.parametrize("bad_arg", [
     None, 1, type,
 ], ids= ("NoneType", "int", "type"))
-def test_str_only_spec(bad_arg, function, method, formattable):
+def test_str_only_spec(bad_arg, target, formatmethod, formattable):
     """format specs must be strings (might change this requirement later...?)"""
     with pytest.raises(TypeError):
-        @function(bad_arg)
+        @target(bad_arg)
         def f(): ...
     with pytest.raises(TypeError):
         @formattable
         class X:
-            @method(bad_arg)
+            @formatmethod(bad_arg)
             def f(self): ...
 
 
-def test_not_callable(function, method):
-    """function and method decorators apply only to callables"""
+def test_not_callable(target, formatmethod):
+    """target and formatmethod decorators apply only to callables"""
     with pytest.raises(TypeError):
-        function(1)
+        target(1)
     with pytest.raises(TypeError):
-        method(1)
+        formatmethod(1)
 
 
 def test_not_type(formattable):

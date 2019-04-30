@@ -18,6 +18,7 @@ def SimpleFormatterError(simpleformatter):
     from simpleformatter.simpleformatter import SimpleFormatterError
     return SimpleFormatterError
 
+
 @pytest.fixture
 def formattable(simpleformatter):
     from simpleformatter import formattable
@@ -25,12 +26,12 @@ def formattable(simpleformatter):
 
 
 @pytest.fixture
-def method(simpleformatter):
-    from simpleformatter import method
-    return method
+def formatmethod(simpleformatter):
+    from simpleformatter import formatmethod
+    return formatmethod
 
 
 @pytest.fixture
-def function(simpleformatter):
-    from simpleformatter import function
-    return function
+def target(simpleformatter):
+    from simpleformatter import target
+    return target
