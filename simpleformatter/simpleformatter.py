@@ -8,6 +8,7 @@ from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar,
 SPECS = "specs"  # formatmethod specifiers holder attribute name
 DEFAULT_DUNDER_FORMAT = "_default__format__"  # attr name to keep reference to original __format__
 FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
+OVERRIDE = "override"  # attr name to specify if a formatmethod should override a formatter target
 
 TSimpleFormatter = TypeVar("TSimpleFormatter", bound="SimpleFormatter")
 T = TypeVar("T")
@@ -22,7 +23,7 @@ x: Target = lambda a, b, c, d: ResultStr("1")
 def _new__format__(obj: T, format_spec: Spec):
     """Replacement __format__ formatmethod for formattable classes"""
     fmtr: Formatter
-    for fmtr in getattr(obj, FORMATTERS, ()):
+    for fmtr in reversed(getattr(obj, FORMATTERS, ())):
         try:
             return fmtr.format_field(obj, format_spec)
         except SimpleFormatterError:
@@ -43,9 +44,10 @@ class SimpleFormatterError(Exception):
 class formatmethod(Generic[T]):
     """Create a formatmethod. Accessed by specific format specifiers and returns a formatted version of the string."""
 
-    def __init__(self, method: Optional[Target] = None, *specs: Spec) -> None:
+    def __init__(self, method: Optional[Target] = None, *specs: Spec, override: bool = False) -> None:
         setattr(self, SPECS, specs if specs else ("",))
 
+        # TODO: implement override
         if method is not None:
             self(method.__func__ if hasattr(method, "__func__") else method)
 
@@ -81,7 +83,10 @@ class SimpleFormatter(Formatter, Generic[T]):
 
         return decorator if cls is None else decorator(cls)
 
-    def target(self, func: Optional[Target] = None, *specs: Spec) -> Target:
+    def target(self, func: Optional[Union[Target, Spec]] = None, *specs: Spec) -> Target:
+
+        if isinstance(func, str):
+            func, specs = None, (func, *specs)
 
         def decorator(f: Target) -> Target:
             self.register_target(f, *specs)
@@ -122,6 +127,7 @@ class SimpleFormatter(Formatter, Generic[T]):
     @staticmethod
     def lookup_formatmethod(obj: T, format_spec: Spec) -> Target:
         try:
+            # TODO: swap out `member` below for the formatmethod
             *_, m_name = (attr for attr, member in ((attr, getattr(obj, attr)) for attr in dir(obj))
                           if format_spec in getattr(member, SPECS, ()))
         except ValueError:
@@ -142,12 +148,16 @@ class SimpleFormatter(Formatter, Generic[T]):
 
     def register_cls(self, cls: Type[T], target_dict: Optional[Mapping[Spec, Target]] = None,
                      **target_kwargs: Target) -> None:
-        setattr(cls, DEFAULT_DUNDER_FORMAT, cls.__format__)
+        setattr(cls, DEFAULT_DUNDER_FORMAT, getattr(cls, DEFAULT_DUNDER_FORMAT, cls.__format__))
         cls.__format__ = _new__format__
         self.cls_reg[cls] = dict()
         if target_dict is None:
             target_dict = {}
         self.cls_reg[cls].update(target_dict, **target_kwargs)
+        try:
+            getattr(cls, FORMATTERS).append(self)
+        except AttributeError:
+            setattr(cls, FORMATTERS, [self])
 
     def register_target(self, target: Target, *specs: Spec) -> None:
         self.target_reg.update(zip(specs, repeat(target)))
