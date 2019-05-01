@@ -20,27 +20,54 @@ FormatRegister = Dict[Spec, Target]
 x: Target = lambda a, b, c, d: ResultStr("1")
 
 
-def _new__format__(obj: T, format_spec: Spec):
-    """Replacement __format__ formatmethod for formattable classes"""
-    # TODO: fix order so all formatters consulted before formatmethods
-    # TODO: account for formatmethod override setting
-    fmtr: Formatter
-    for fmtr in reversed(getattr(obj, FORMATTERS, ())):
-        try:
-            return fmtr.format_field(obj, format_spec)
-        except SimpleFormatterError:
-            pass
-    else:
-        try:
-            target = getattr(obj, DEFAULT_DUNDER_FORMAT)
-        except AttributeError:
-            raise ValueError("invalid format specifier")
-        else:
-            return target(format_spec)
-
-
 class SimpleFormatterError(Exception):
     pass
+
+
+def _new__format__(obj: T, format_spec: Spec):
+    """Replacement __format__ formatmethod for formattable classes"""
+
+    try:
+        return compute_target(obj, format_spec)
+    except SimpleFormatterError:
+        pass
+
+    try:
+        target = getattr(obj, DEFAULT_DUNDER_FORMAT)
+    except AttributeError:
+        raise ValueError("invalid format specifier")
+    else:
+        return target(obj, format_spec)
+
+
+def compute_target(obj: T, format_spec: Spec) -> Target:
+
+    method: Optional[formatmethod]
+    try:
+        method = lookup_formatmethod(obj, format_spec)
+    except SimpleFormatterError:
+        method = None
+    # TODO: account for formatmethod override setting
+
+    fmtr: Formatter
+    for fmtr in reversed(getattr(obj, FORMATTERS, ())):
+        return fmtr.format_field(obj, format_spec)
+    else:
+        if method is not None:
+            return method.__func__
+        else:
+            raise ValueError("invalid format specifier")
+
+
+def lookup_formatmethod(obj: T, format_spec: Spec) -> formatmethod:
+    try:
+        cls = type(obj)
+        # perform lookup based on the cls's formatmethod-like objects (ie, objects with a SPECS attribute)
+        # the MOST RECENTLY DEFINED method using the format_spec is the one we want
+        return next(cls_member for cls_member in (getattr(cls, attr, None) for attr in reversed(dir(obj)))
+                      if format_spec in getattr(cls_member, SPECS, ()))
+    except StopIteration:
+        raise SimpleFormatterError()
 
 
 class formatmethod(Generic[T]):
@@ -107,7 +134,7 @@ class SimpleFormatter(Formatter, Generic[T]):
         return decorator if func is None else decorator(func)
 
     def format_field(self, value: T, format_spec: Spec) -> ResultStr:
-        handler = self.spec_handler(value, format_spec)
+        handler = self.lookup_target(value, format_spec)
         # user defined targets *may* discard arguments for convenience
         # TODO: figure out if want to allow discarding self and keeping format_spec? how to do? check staticmethod??
         if len(signature(handler).parameters) == 0:
@@ -116,39 +143,20 @@ class SimpleFormatter(Formatter, Generic[T]):
             return handler(value)
         return handler(value, format_spec)
 
-    def spec_handler(self, obj: T, format_spec: Spec) -> Target:
-        """Retrieve the handling target given an object and format_spec"""
+    def lookup_target(self, obj: T, format_spec: Spec) -> Target:
+        """Retrieve the target given an object and format specifier"""
         # formattable decorator first
         try:
             return self.lookup_cls_target(obj, format_spec)
         except SimpleFormatterError:
             pass
-        # formatmethod decorators second
-        try:
-            method: formatmethod = self.lookup_formatmethod(obj, format_spec)
-            return method.__func__
-        except SimpleFormatterError:
-            pass
-        # target decorators third
+        # target decorators second
         try:
             return self.lookup_gen_target(format_spec)
         except SimpleFormatterError:
             pass
         # signal spec handling failure
         raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
-
-    @staticmethod
-    def lookup_formatmethod(obj: T, format_spec: Spec) -> formatmethod:
-        try:
-            cls = type(obj)
-            # perform lookup based on the cls's formatmethod-like objects (ie, objects with a SPECS attribute)
-            # the MOST RECENTLY DEFINED method using the format_spec is the one we want
-            f_method = next(cls_member for cls_member in (getattr(cls, attr, None) for attr in reversed(dir(obj)))
-                          if format_spec in getattr(cls_member, SPECS, ()))
-        except ValueError:
-            raise SimpleFormatterError()
-        # return the formatmethod
-        return f_method
 
     def lookup_cls_target(self: SimpleFormatter, obj: T, format_spec: Spec) -> Target:
         try:
