@@ -3,7 +3,7 @@ from __future__ import annotations
 from inspect import signature
 from itertools import repeat
 from string import Formatter
-from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Tuple
+from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence
 
 SPECS = "specifiers"  # formatmethod specifiers holder attribute name
 DEFAULT_DUNDER_FORMAT = "_default__format__"  # attr name to keep reference to original __format__
@@ -28,19 +28,17 @@ def _new__format__(obj: T, format_spec: Spec):
     """Replacement __format__ formatmethod for formattable classes"""
 
     try:
-        return compute_target(obj, format_spec)
+        return compute_str(obj, format_spec)
     except SimpleFormatterError:
-        pass
-
-    try:
-        target = getattr(obj, DEFAULT_DUNDER_FORMAT)
-    except AttributeError:
-        raise ValueError("invalid format specifier")
-    else:
-        return target(obj, format_spec)
+        try:
+            default__format__ = getattr(obj, DEFAULT_DUNDER_FORMAT)
+        except AttributeError:
+            raise ValueError("invalid format specifier")
+        else:
+            return default__format__(obj, format_spec)
 
 
-def compute_target(obj: T, format_spec: Spec) -> Target:
+def compute_str(obj: T, format_spec: Spec) -> ResultStr:
 
     method: Optional[formatmethod]
     try:
@@ -54,7 +52,7 @@ def compute_target(obj: T, format_spec: Spec) -> Target:
         return fmtr.format_field(obj, format_spec)
     else:
         if method is not None:
-            return method.__func__
+            return method.__func__(obj, format_spec)
         else:
             raise ValueError("invalid format specifier")
 
@@ -82,7 +80,7 @@ class formatmethod(Generic[T]):
             if callable(specs[0]):
                 method, *specs = specs
 
-        specs: Tuple[Spec]
+        specs: Sequence[Spec]
 
         if method is not None:
             self(method.__func__ if hasattr(method, "__func__") else method)
