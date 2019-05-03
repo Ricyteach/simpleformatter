@@ -7,7 +7,7 @@ from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar,
 
 SPECS = "specifiers"  # formatmethod specifiers holder attribute name
 DEFAULT_DUNDER_FORMAT = "_default__format__"  # attr name to keep reference to original __format__
-FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
+FORMATTER = "_formatter"  # attr name to keep reference to applied simpleformatter instances
 OVERRIDE = "override"  # attr name to specify if a formatmethod should override a formatter target
 
 TSimpleFormatter = TypeVar("TSimpleFormatter", bound="SimpleFormatter")
@@ -28,7 +28,7 @@ def _new__format__(obj: T, format_spec: Spec):
     """Replacement __format__ formatmethod for formattable classes"""
 
     try:
-        return compute_str(obj, format_spec)
+        return compute_formatter_str(obj, format_spec)
     except SimpleFormatterError:
         try:
             default__format__ = getattr(obj, DEFAULT_DUNDER_FORMAT)
@@ -38,23 +38,17 @@ def _new__format__(obj: T, format_spec: Spec):
             return default__format__(obj, format_spec)
 
 
-def compute_str(obj: T, format_spec: Spec) -> ResultStr:
+def compute_formatter_str(obj: T, format_spec: Spec) -> ResultStr:
+    """Uses the Formatter associated with obj to produce the formatted string.
 
-    method: Optional[formatmethod]
+    Raises SimpleFormatterError if obj has no associated Formatter"""
+
     try:
-        method = lookup_formatmethod(obj, format_spec)
-    except SimpleFormatterError:
-        method = None
-    # TODO: account for formatmethod override setting
-
-    fmtr: Formatter
-    for fmtr in reversed(getattr(obj, FORMATTERS, ())):
-        return fmtr.format_field(obj, format_spec)
+        target: Target = getattr(obj, FORMATTER).format_field
+    except AttributeError:
+        raise SimpleFormatterError("invalid format specifier")
     else:
-        if method is not None:
-            return method.__func__(obj, format_spec)
-        else:
-            raise ValueError("invalid format specifier")
+        return target(obj, format_spec)
 
 
 def lookup_formatmethod(obj: T, format_spec: Spec) -> formatmethod:
@@ -132,17 +126,27 @@ class SimpleFormatter(Formatter, Generic[T]):
         return decorator if func is None else decorator(func)
 
     def format_field(self, value: T, format_spec: Spec) -> ResultStr:
-        handler = self.lookup_target(value, format_spec)
+        """Use the target associated with format_spec to produce the formatted string version of value"""
+
+        target = self.compute_target(value, format_spec)
         # user defined targets *may* discard arguments for convenience
         # TODO: figure out if want to allow discarding self and keeping format_spec? how to do? check staticmethod??
-        if len(signature(handler).parameters) == 0:
-            return handler()
-        if len(signature(handler).parameters) == 1:
-            return handler(value)
-        return handler(value, format_spec)
+        if len(signature(target).parameters) == 0:
+            return target()
+        if len(signature(target).parameters) == 1:
+            return target(value)
+        return target(value, format_spec)
 
-    def lookup_target(self, obj: T, format_spec: Spec) -> Target:
+    def compute_target(self, obj: T, format_spec: Spec) -> Target:
         """Retrieve the target given an object and format specifier"""
+
+        method: Optional[formatmethod]
+        try:
+            method = lookup_formatmethod(obj, format_spec)
+        except SimpleFormatterError:
+            method = None
+        # TODO: account for formatmethod override setting
+
         # formattable decorator first
         try:
             return self.lookup_cls_target(obj, format_spec)
@@ -177,9 +181,9 @@ class SimpleFormatter(Formatter, Generic[T]):
             target_dict = {}
         self.cls_reg[cls].update(target_dict, **target_kwargs)
         try:
-            getattr(cls, FORMATTERS).append(self)
+            getattr(cls, FORMATTER).append(self)
         except AttributeError:
-            setattr(cls, FORMATTERS, [self])
+            setattr(cls, FORMATTER, self)
 
     def register_target(self, target: Target, *specs: Spec) -> None:
         self.target_reg.update(zip(specs, repeat(target)))
