@@ -7,7 +7,7 @@ from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar,
 
 SPECS = "specifiers"  # formatmethod specifiers holder attribute name
 DEFAULT_DUNDER_FORMAT = "_default__format__"  # attr name to keep reference to original __format__
-FORMATTER = "_formatter"  # attr name to keep reference to applied simpleformatter instances
+FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
 OVERRIDE = "override"  # attr name to specify if a formatmethod should override a formatter target
 
 TSimpleFormatter = TypeVar("TSimpleFormatter", bound="SimpleFormatter")
@@ -24,31 +24,75 @@ class SimpleFormatterError(Exception):
     pass
 
 
-def _new__format__(obj: T, format_spec: Spec):
+def _new__format__(obj: T, format_spec: Spec) -> ResultStr:
     """Replacement __format__ formatmethod for formattable classes"""
 
+    target: Target
     try:
-        return compute_formatter_str(obj, format_spec)
+        target = compute_formatting_func(obj, format_spec)
     except SimpleFormatterError:
         try:
-            default__format__ = getattr(obj, DEFAULT_DUNDER_FORMAT)
+            target = getattr(obj, DEFAULT_DUNDER_FORMAT)
         except AttributeError:
             raise ValueError("invalid format specifier")
-        else:
-            return default__format__(obj, format_spec)
+
+    # user defined targets *may* discard arguments for convenience
+    # TODO: figure out if want to allow discarding self and keeping format_spec? how to do? check staticmethod??
+    if len(signature(target).parameters) == 0:
+        return target()
+    if len(signature(target).parameters) == 1:
+        return target(obj)
+    return target(obj, format_spec)
 
 
-def compute_formatter_str(obj: T, format_spec: Spec) -> ResultStr:
-    """Uses the Formatter associated with obj to produce the formatted string.
+def compute_formatting_func(obj: T, format_spec: Spec) -> Target:
+    """Uses the Formatters and formatmethods associated with obj to compute a formatting function.
 
-    Raises SimpleFormatterError if obj has no associated Formatter"""
+    Raises SimpleFormatterError if obj has no associated Formatter(s)"""
 
+    # get any formatmethod first and check if it takes take precedence
+    format_method: Optional[formatmethod]
     try:
-        target: Target = getattr(obj, FORMATTER).format_field
-    except AttributeError:
-        raise SimpleFormatterError("invalid format specifier")
+        format_method = lookup_formatmethod(obj, format_spec)
+    except SimpleFormatterError:
+        format_method = None
     else:
-        return target(obj, format_spec)
+        # formatmethod with override comes first
+        # TODO: return immediately if format_method overrides
+        pass
+
+    # the specifier target is next priority
+    try:
+        return compute_target(obj, format_spec)
+    except SimpleFormatterError as e:
+        if format_method is None:
+            raise e
+        else:
+            # formatmethod with no override comes last
+            return format_method
+
+
+def compute_target(obj: T, format_spec: Spec) -> Target:
+    """Retrieve the target given an object and format specifier.
+
+    The Formatters associated with obj are combined to find the target.
+    """
+
+    # TODO: finish this -- broken right now
+    # formattable decorator first
+    try:
+        return composite_cls_reg[type(obj)][format_spec]
+    except KeyError:
+        raise SimpleFormatterError(f"no class-level target for spec: {format_spec!r}")
+
+    # target decorators second
+    try:
+        return composite_gen_reg.target_reg[format_spec]
+    except KeyError:
+        raise SimpleFormatterError(f"no target for spec: {format_spec!r}")
+
+    # signal spec handling failure
+    raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
 
 
 def lookup_formatmethod(obj: T, format_spec: Spec) -> formatmethod:
@@ -128,38 +172,6 @@ class SimpleFormatter(Formatter, Generic[T]):
     def format_field(self, value: T, format_spec: Spec) -> ResultStr:
         """Use the target associated with format_spec to produce the formatted string version of value"""
 
-        target = self.compute_target(value, format_spec)
-        # user defined targets *may* discard arguments for convenience
-        # TODO: figure out if want to allow discarding self and keeping format_spec? how to do? check staticmethod??
-        if len(signature(target).parameters) == 0:
-            return target()
-        if len(signature(target).parameters) == 1:
-            return target(value)
-        return target(value, format_spec)
-
-    def compute_target(self, obj: T, format_spec: Spec) -> Target:
-        """Retrieve the target given an object and format specifier"""
-
-        method: Optional[formatmethod]
-        try:
-            method = lookup_formatmethod(obj, format_spec)
-        except SimpleFormatterError:
-            method = None
-        # TODO: account for formatmethod override setting
-
-        # formattable decorator first
-        try:
-            return self.lookup_cls_target(obj, format_spec)
-        except SimpleFormatterError:
-            pass
-        # target decorators second
-        try:
-            return self.lookup_gen_target(format_spec)
-        except SimpleFormatterError:
-            pass
-        # signal spec handling failure
-        raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
-
     def lookup_cls_target(self: SimpleFormatter, obj: T, format_spec: Spec) -> Target:
         try:
             return self.cls_reg[type(obj)][format_spec]
@@ -181,9 +193,9 @@ class SimpleFormatter(Formatter, Generic[T]):
             target_dict = {}
         self.cls_reg[cls].update(target_dict, **target_kwargs)
         try:
-            getattr(cls, FORMATTER).append(self)
+            getattr(cls, FORMATTERS).append(self)
         except AttributeError:
-            setattr(cls, FORMATTER, self)
+            setattr(cls, FORMATTERS, [self])
 
     def register_target(self, target: Target, *specs: Spec) -> None:
         self.target_reg.update(zip(specs, repeat(target)))
