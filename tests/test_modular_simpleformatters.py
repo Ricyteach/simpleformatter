@@ -76,5 +76,7 @@ def test_modular_methods(sf1, sf2, formatmethod):
         def m(self):
             return "m"
 
-    assert f"{X():spec1}"=="f1"
-    assert f"{X():spec2}"=="f2"
+    x = X()
+
+    assert f"{x:spec1}"=="f1"
+    assert f"{x:spec2}"=="f2"

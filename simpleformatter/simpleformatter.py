@@ -3,29 +3,29 @@ from __future__ import annotations
 from inspect import signature
 from itertools import repeat
 from string import Formatter
-from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence
+from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence, Any
 
 SPECS = "specifiers"  # formatmethod specifiers holder attribute name
 DEFAULT_DUNDER_FORMAT = "_default__format__"  # attr name to keep reference to original __format__
 FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
 OVERRIDE = "override"  # attr name to specify if a formatmethod should override a formatter target
 
-TSimpleFormatter = TypeVar("TSimpleFormatter", bound="SimpleFormatter")
 T = TypeVar("T")
 Spec = NewType("Spec", str)
 ResultStr = NewType("ResultStr", str)
-Target = Union[Callable[[T, Spec], ResultStr], Callable[[T], ResultStr], Callable[[], ResultStr]]
-BoundTarget = Union[Callable[[Spec], ResultStr], Callable[[], ResultStr]]
+Target = Callable[..., ResultStr]
 FormatRegister = Dict[Spec, Target]
-x: Target = lambda a, b, c, d: ResultStr("1")
 
 
 class SimpleFormatterError(Exception):
     pass
 
 
-def _new__format__(obj: T, format_spec: Spec) -> ResultStr:
-    """Replacement __format__ formatmethod for formattable classes"""
+def _new__format__(obj: Any, format_spec: Spec) -> ResultStr:
+    """Replacement __format__ formatmethod for formattable decorated classes"""
+
+    if not isinstance(format_spec, str):
+        raise TypeError(f"__format__() argument must be str, not {type(format_spec).__qualname__!s}")
 
     target: Target
     try:
@@ -45,7 +45,7 @@ def _new__format__(obj: T, format_spec: Spec) -> ResultStr:
     return target(obj, format_spec)
 
 
-def compute_formatting_func(obj: T, format_spec: Spec) -> Target:
+def compute_formatting_func(obj: Any, format_spec: Spec) -> Target:
     """Uses the Formatters and formatmethods associated with obj to compute a formatting function.
 
     Raises SimpleFormatterError if obj has no associated Formatter(s)"""
@@ -78,24 +78,35 @@ def compute_target(obj: T, format_spec: Spec) -> Target:
     The Formatters associated with obj are combined to find the target.
     """
 
-    # TODO: finish this -- broken right now
-    # formattable decorator first
-    try:
-        return composite_cls_reg[type(obj)][format_spec]
-    except KeyError:
-        raise SimpleFormatterError(f"no class-level target for spec: {format_spec!r}")
+    cls = type(obj)
+    empty_dict = dict()
 
-    # target decorators second
-    try:
-        return composite_gen_reg.target_reg[format_spec]
-    except KeyError:
-        raise SimpleFormatterError(f"no target for spec: {format_spec!r}")
+    # build composite registries from formatters
+    composite_cls_reg: FormatRegister = dict()
+    composite_target_reg: FormatRegister = dict()
 
-    # signal spec handling failure
-    raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
+    fmtr: SimpleFormatter
+    for fmtr in getattr(obj, FORMATTERS):
+        composite_cls_reg.update(fmtr.cls_reg.get(cls, empty_dict))
+        composite_target_reg.update(fmtr.target_reg)
+
+    try:
+        # formattable decorator first
+        return composite_cls_reg[format_spec]
+    except KeyError:
+        try:
+            # target decorators second
+            return composite_target_reg[format_spec]
+        except KeyError:
+            # signal spec handling failure
+            raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
 
 
 def lookup_formatmethod(obj: T, format_spec: Spec) -> formatmethod:
+    """Retrieve the obj formatmethod that utilizes the format_spec, if it exists.
+
+    Raises SimpleFormatterError if one is not found."""
+
     try:
         cls = type(obj)
         # perform lookup based on the cls's formatmethod-like objects (ie, objects with a SPECS attribute)
@@ -107,16 +118,15 @@ def lookup_formatmethod(obj: T, format_spec: Spec) -> formatmethod:
 
 
 class formatmethod(Generic[T]):
-    """formatmethod decorator. Accessed by specific format specifiers and returns a formatted version of the string."""
+    """formatmethod decorator. Accessed by _new__format__ returns a formatted version of the string."""
 
     def __init__(self, *specs: Union[Target, Spec], override: bool = False) -> None:
 
         method: Optional[Target] = None
 
         # first specifier may be decorator argument
-        if specs:
-            if callable(specs[0]):
-                method, *specs = specs
+        if specs and callable(specs[0]):
+            method, *specs = specs
 
         specs: Sequence[Spec]
 
@@ -126,7 +136,7 @@ class formatmethod(Generic[T]):
 
         # TODO: implement override
 
-    def __get__(self, instance, owner) -> Union[formatmethod, BoundTarget]:
+    def __get__(self, instance, owner) -> Target:
         if instance is not None:
             return self.__func__.__get__(instance, owner)
         return self
@@ -158,10 +168,12 @@ class SimpleFormatter(Formatter, Generic[T]):
 
         return decorator if cls is None else decorator(cls)
 
-    def target(self, func: Optional[Union[Target, Spec]] = None, *specs: Spec) -> Target:
+    def target(self, *specs: Union[Target, Spec]) -> Target:
 
-        if isinstance(func, str):
-            func, specs = None, (func, *specs)
+        func: Optional[Target] = None
+
+        if specs and callable(specs[0]):
+            method, *specs = specs
 
         def decorator(f: Target) -> Target:
             self.register_target(f, *specs)
