@@ -54,13 +54,15 @@ def a_last(formattable, formatters_first, A):
 @pytest.fixture
 def formatters_last(target, a_first, gen_fmtr_func1, gen_fmtr_func2):
     """Formatter functions decorated last"""
-    return target("spec1")(gen_fmtr_func1), target(gen_fmtr_func2, "spec2")
+    target("spec1")(gen_fmtr_func1)
+    target(gen_fmtr_func2, "spec2")
+    return
 
 
 @pytest.mark.parametrize("spec", [
     "spec1",
     "spec2",
-], ids=["spec1", "spec2"])
+])
 def test_class_first(a_first, formatters_last, spec):
     expected = a_first.test_results[spec]
     actual = f"{a_first:{spec!s}}"
@@ -70,7 +72,7 @@ def test_class_first(a_first, formatters_last, spec):
 @pytest.mark.parametrize("spec", [
     "spec1",
     "spec2",
-], ids=["spec1", "spec2"])
+])
 def test_formatters_first(a_last, formatters_first, spec):
     f"{a_last:{''}}"
     assert f"{a_last:{spec!s}}" == a_last.test_results[spec]
@@ -87,7 +89,7 @@ def test_wrong_use_of_function(formattable, target):
 
 @pytest.mark.parametrize("bad_arg", [
     None, 1, object(),
-], ids= ("NoneType", "int", "type"))
+], ids= ("NoneType", "int", "object()"))
 def test_str_only_spec(bad_arg, target, formatmethod, formattable):
     """format specs must be strings (might change this requirement later...?)"""
     with pytest.raises(TypeError):

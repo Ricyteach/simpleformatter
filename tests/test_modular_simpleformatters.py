@@ -3,20 +3,16 @@
 
 """Tests for multiple, concurrent instances of the `SimpleFormatter` class."""
 import pytest
+from simpleformatter import SimpleFormatter
 
 
 @pytest.fixture
-def SimpleFormatter(simpleformatter):
-    return simpleformatter.SimpleFormatter
-
-
-@pytest.fixture
-def sf1(SimpleFormatter):
+def sf1():
     return SimpleFormatter()
 
 
 @pytest.fixture
-def sf2(SimpleFormatter):
+def sf2():
     return SimpleFormatter()
 
 

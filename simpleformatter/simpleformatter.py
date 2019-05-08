@@ -33,7 +33,7 @@ def _new__format__(obj: Any, format_spec: Spec) -> ResultStr:
         target = compute_formatting_func(obj, format_spec)
     except SimpleFormatterError:
         try:
-            target = getattr(obj, DEFAULT_DUNDER_FORMAT)
+            target = getattr(type(obj), DEFAULT_DUNDER_FORMAT)
         except AttributeError:
             raise ValueError("invalid format specifier")
 
@@ -175,7 +175,7 @@ class SimpleFormatter(Formatter, Generic[T]):
 
         func: Optional[Target] = None
 
-        if specs and callable(specs[0]):
+        if specs and not isinstance(specs[0], str):
             method, *specs = specs
 
         check_types(specs, str, SPECS_TYPE_ERROR)
