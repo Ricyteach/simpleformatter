@@ -3,9 +3,10 @@ from __future__ import annotations
 from inspect import signature
 from itertools import repeat
 from string import Formatter
-from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence, Any
+from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence, Any, Iterable
 
 SPECS = "specifiers"  # formatmethod specifiers holder attribute name
+SPECS_TYPE_ERROR = "format specifiers must be {type_.__qualname__!s}, not {obj.__class__.__qualname__!s}"
 DEFAULT_DUNDER_FORMAT = "_default__format__"  # attr name to keep reference to original __format__
 FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
 OVERRIDE = "override"  # attr name to specify if a formatmethod should override a formatter target
@@ -128,6 +129,8 @@ class formatmethod(Generic[T]):
         if specs and callable(specs[0]):
             method, *specs = specs
 
+        check_types(specs, str, SPECS_TYPE_ERROR)
+
         specs: Sequence[Spec]
 
         if method is not None:
@@ -175,6 +178,8 @@ class SimpleFormatter(Formatter, Generic[T]):
         if specs and callable(specs[0]):
             method, *specs = specs
 
+        check_types(specs, str, SPECS_TYPE_ERROR)
+
         def decorator(f: Target) -> Target:
             self.register_target(f, *specs)
             return f
@@ -211,3 +216,21 @@ class SimpleFormatter(Formatter, Generic[T]):
 
     def register_target(self, target: Target, *specs: Spec) -> None:
         self.target_reg.update(zip(specs, repeat(target)))
+
+
+def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[str, Iterable[str]]) -> None:
+    if isinstance(objs, str):
+        objs=[objs]
+
+    if not isinstance(types, Iterable):
+        types = repeat(types)
+
+    if isinstance(err_msgs, str) or not isinstance(err_msgs, Iterable):
+        err_msgs = repeat(err_msgs)
+
+    try:
+        raise TypeError(next(msg.format(obj=obj, type_=type_) for obj, type_, msg in zip(objs, types, err_msgs)
+                             if not isinstance(obj, type_)))
+    except StopIteration:
+        pass
+
