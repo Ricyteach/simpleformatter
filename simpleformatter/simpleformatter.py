@@ -173,7 +173,7 @@ class SimpleFormatter(Formatter, Generic[T]):
 
     def target(self, *specs: Union[Target, Spec]) -> Target:
 
-        func: Optional[Target] = None
+        method: Optional[Target] = None
 
         if specs and not isinstance(specs[0], str):
             method, *specs = specs
@@ -184,7 +184,7 @@ class SimpleFormatter(Formatter, Generic[T]):
             self.register_target(f, *specs)
             return f
 
-        return decorator if func is None else decorator(func)
+        return decorator if method is None else decorator(method)
 
     def format_field(self, value: T, format_spec: Spec) -> ResultStr:
         """Use the target associated with format_spec to produce the formatted string version of value"""
