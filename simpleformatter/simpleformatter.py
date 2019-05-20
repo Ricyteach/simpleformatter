@@ -6,10 +6,13 @@ from string import Formatter
 from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence, Any, Iterable, \
     Tuple
 
+Sentinel = type("Sentinel", (), {})
+SENTINEL = Sentinel()
 FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
 DEFAULT__FORMAT__ = "_default__format__"  # attr name to keep reference to original __format__
 SPECS = "specifiers"  # formatmethod specifiers holder attribute name
-SPECS_TYPE_ERROR = "format specifiers must be {type_.__qualname__!s}, not {obj.__class__.__qualname__!s}"
+SPECS_TYPE_ERROR = "format specifiers must be {type_name!s}, not {obj.__class__.__qualname__!s}"
+TARGET_TYPE_ERROR = "format function targets must be {type_name!s}, not {obj.__class__.__qualname__!s}"
 
 T = TypeVar("T")
 FormatString = NewType("FormatString", str)
@@ -128,7 +131,7 @@ class formatmethod:
 
         self.override: bool = override
 
-        method: Optional[Target] = None
+        method: Union[Sentinel, Target] = SENTINEL
 
         # first specifier may be decorator argument
         if specs and not isinstance(specs[0], str):
@@ -142,7 +145,7 @@ class formatmethod:
         setattr(self, SPECS, set(specs) if specs else {"",})
 
         # apply decorator if called with no arguments
-        if method is not None:
+        if method is not SENTINEL:
             self(method)
 
     def __get__(self, instance, owner) -> Target:
@@ -151,6 +154,7 @@ class formatmethod:
         return self
 
     def __call__(self, method: Target) -> formatmethod:
+        check_types(method, Callable, TARGET_TYPE_ERROR)
         getattr(self, SPECS).update(getattr(method, SPECS, set()))
         self._method = getattr(method, "__func__", method)
         return self
@@ -187,19 +191,17 @@ class SimpleFormatter(Formatter, Generic[T]):
 
     def target(self, *specs: Union[Target, FormatSpec]) -> Target:
 
-        func: Optional[Target] = None
+        func: Union[Sentinel, Target] = SENTINEL
 
         if specs and not isinstance(specs[0], str):
             specs: Sequence[FormatSpec]
             func, *specs = specs
 
-        check_types(specs, str, SPECS_TYPE_ERROR)
-
         def target_dec(func: Target) -> Target:
             self.register_target(func, specs)
             return func
 
-        return target_dec if func is None else target_dec(func)
+        return target_dec if func is SENTINEL else target_dec(func)
 
     def format_field(self, value: T, format_spec: FormatSpec) -> FormatString:
         """Use the target associated with format_spec to produce the formatted string version of value"""
@@ -234,13 +236,15 @@ class SimpleFormatter(Formatter, Generic[T]):
 
     def register_target(self, target: Target, specs: Union[FormatSpec, Iterable[FormatSpec]]) -> None:
         specs_tup: Tuple[FormatSpec] = (specs,) if isinstance(specs, str) else tuple(specs)
+        check_types(specs_tup, str, SPECS_TYPE_ERROR)
+        check_types(target, Callable, TARGET_TYPE_ERROR)
 
         self.target_reg.update(zip(specs_tup, repeat(target)))
 
 
 def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[str, Iterable[str]]) -> None:
-    if isinstance(objs, str):
-        objs=[objs]
+    if isinstance(objs, str) or not isinstance(objs, Iterable):
+        objs = objs,
 
     if not isinstance(types, Iterable):
         types = repeat(types)
@@ -249,7 +253,8 @@ def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[s
         err_msgs = repeat(err_msgs)
 
     try:
-        raise TypeError(next(msg.format(obj=obj, type_=type_) for obj, type_, msg in zip(objs, types, err_msgs)
+        raise TypeError(next(msg.format(obj=obj, type_name=getattr(type_,"__qualname__",str(type_)))
+                             for obj, type_, msg in zip(objs, types, err_msgs)
                              if not isinstance(obj, type_)))
     except StopIteration:
         pass
