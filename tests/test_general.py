@@ -79,7 +79,7 @@ def test_formatters_first(a_last, formatters_first, spec):
 
 
 def test_wrong_use_of_function(formattable, target):
-    """Class methods should be decorat"""
+    """Class methods should be decorated with formatmethod"""
     with pytest.raises(TypeError):
         @formattable
         class X:

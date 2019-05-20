@@ -199,20 +199,21 @@ def test_formatter_function(cls_name, formatter_name, spec, A, ex_a, B, ex_b, C,
     cls = eval(cls_name)
     obj = eval(f"ex_{cls_name.lower()}")
     formatter = eval(formatter_name)
+    formatter_func = getattr(formatter, "__func__", formatter)
     result = cls.test_results[spec]
     if result is None:
         # invalid spec; just make sure no exceptions get raised when formatter_name is called
         try:
-            formatter(obj, spec)
+            formatter_func(obj, spec)
         except TypeError:
             # single argument
-            formatter(obj)
+            formatter_func(obj)
     else:
         try:
-            assert formatter(obj, spec) == result
+            assert formatter_func(obj, spec) == result
         except TypeError:
             # single argument
-            assert formatter(obj) == result
+            assert formatter_func(obj) == result
 
 
 # api tests ############################################################################################################

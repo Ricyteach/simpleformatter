@@ -3,26 +3,27 @@ from __future__ import annotations
 from inspect import signature
 from itertools import repeat
 from string import Formatter
-from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence, Any, Iterable
+from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence, Any, Iterable, \
+    Tuple
 
+FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
+DEFAULT__FORMAT__ = "_default__format__"  # attr name to keep reference to original __format__
 SPECS = "specifiers"  # formatmethod specifiers holder attribute name
 SPECS_TYPE_ERROR = "format specifiers must be {type_.__qualname__!s}, not {obj.__class__.__qualname__!s}"
-DEFAULT_DUNDER_FORMAT = "_default__format__"  # attr name to keep reference to original __format__
-FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
-OVERRIDE = "override"  # attr name to specify if a formatmethod should override a formatter target
 
 T = TypeVar("T")
-Spec = NewType("Spec", str)
-ResultStr = NewType("ResultStr", str)
-Target = Callable[..., ResultStr]
-FormatRegister = Dict[Spec, Target]
+FormatString = NewType("FormatString", str)
+FormatSpec = NewType("FormatSpec", str)
+Target = Callable[..., FormatString]
+Registry = Mapping[FormatSpec, Target]
+FormatDict = Dict[FormatSpec, Target]
 
 
 class SimpleFormatterError(Exception):
     pass
 
 
-def _new__format__(obj: Any, format_spec: Spec) -> ResultStr:
+def _new__format__(self: Any, format_spec: FormatSpec) -> FormatString:
     """Replacement __format__ formatmethod for formattable decorated classes"""
 
     if not isinstance(format_spec, str):
@@ -30,23 +31,25 @@ def _new__format__(obj: Any, format_spec: Spec) -> ResultStr:
 
     target: Target
     try:
-        target = compute_formatting_func(obj, format_spec)
+        target = compute_formatting_func(self, format_spec)
     except SimpleFormatterError:
         try:
-            target = getattr(type(obj), DEFAULT_DUNDER_FORMAT)
+            target = getattr(type(self), DEFAULT__FORMAT__)
         except AttributeError:
             raise ValueError("invalid format specifier")
+        else:
+            return target(self, format_spec)
 
     # user defined targets *may* discard arguments for convenience
     # TODO: figure out if want to allow discarding self and keeping format_spec? how to do? check staticmethod??
     if len(signature(target).parameters) == 0:
         return target()
     if len(signature(target).parameters) == 1:
-        return target(obj)
-    return target(obj, format_spec)
+        return target(self)
+    return target(self, format_spec)
 
 
-def compute_formatting_func(obj: Any, format_spec: Spec) -> Target:
+def compute_formatting_func(obj: Any, format_spec: FormatSpec) -> Target:
     """Uses the Formatters and formatmethods associated with obj to compute a formatting function.
 
     Raises SimpleFormatterError if obj has no associated Formatter(s)"""
@@ -59,8 +62,8 @@ def compute_formatting_func(obj: Any, format_spec: Spec) -> Target:
         format_method = None
     else:
         # formatmethod with override comes first
-        # TODO: return immediately if format_method overrides
-        pass
+        if format_method.override:
+            return format_method.__func__
 
     # the specifier target is next priority
     try:
@@ -70,21 +73,21 @@ def compute_formatting_func(obj: Any, format_spec: Spec) -> Target:
             raise e
         else:
             # formatmethod with no override comes last
-            return format_method
+            return format_method.__func__
 
 
-def compute_target(obj: T, format_spec: Spec) -> Target:
+def compute_target(obj: Any, format_spec: FormatSpec) -> Target:
     """Retrieve the target given an object and format specifier.
 
-    The Formatters associated with obj are combined to find the target.
+    The formatters associated with obj are combined to find the target.
     """
 
     cls = type(obj)
     empty_dict = dict()
 
     # build composite registries from formatters
-    composite_cls_reg: FormatRegister = dict()
-    composite_target_reg: FormatRegister = dict()
+    composite_cls_reg: FormatDict = dict()
+    composite_target_reg: FormatDict = dict()
 
     fmtr: SimpleFormatter
     for fmtr in getattr(obj, FORMATTERS):
@@ -103,7 +106,7 @@ def compute_target(obj: T, format_spec: Spec) -> Target:
             raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
 
 
-def lookup_formatmethod(obj: T, format_spec: Spec) -> formatmethod:
+def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> formatmethod:
     """Retrieve the obj formatmethod that utilizes the format_spec, if it exists.
 
     Raises SimpleFormatterError if one is not found."""
@@ -118,26 +121,29 @@ def lookup_formatmethod(obj: T, format_spec: Spec) -> formatmethod:
         raise SimpleFormatterError()
 
 
-class formatmethod(Generic[T]):
+class formatmethod:
     """formatmethod decorator. Accessed by _new__format__ returns a formatted version of the string."""
 
-    def __init__(self, *specs: Union[Target, Spec], override: bool = False) -> None:
+    def __init__(self, *specs: Union[Target, FormatSpec], override: bool = False) -> None:
+
+        self.override: bool = override
 
         method: Optional[Target] = None
 
         # first specifier may be decorator argument
-        if specs and callable(specs[0]):
+        if specs and not isinstance(specs[0], str):
+            method: Target
+            specs: Sequence[FormatSpec]
             method, *specs = specs
 
         check_types(specs, str, SPECS_TYPE_ERROR)
 
-        specs: Sequence[Spec]
+        # associate specs with this formatmethod, and guard against double decorators, no specs == empty string spec
+        setattr(self, SPECS, set(specs) if specs else {"",})
 
+        # apply decorator if called with no arguments
         if method is not None:
-            self(method.__func__ if hasattr(method, "__func__") else method)
-        setattr(self, SPECS, specs if specs else ("",))
-
-        # TODO: implement override
+            self(method)
 
     def __get__(self, instance, owner) -> Target:
         if instance is not None:
@@ -145,77 +151,91 @@ class formatmethod(Generic[T]):
         return self
 
     def __call__(self, method: Target) -> formatmethod:
-        self._method = method
+        getattr(self, SPECS).update(getattr(method, SPECS, set()))
+        self._method = getattr(method, "__func__", method)
         return self
 
     @property
     def __func__(self) -> Target:
         return self._method
 
+    def __str__(self):
+        return f"{type(self).__qualname__}({self.__func__.__name__})"
+
 
 class SimpleFormatter(Formatter, Generic[T]):
 
-    target_reg: FormatRegister
-    cls_reg: Dict[Type[T], FormatRegister]
+    target_reg: FormatDict
+    cls_reg: Dict[Type[T], FormatDict]
 
     def __init__(self) -> None:
         self.target_reg = dict()
         self.cls_reg = dict()
 
-    def formattable(self, cls: Optional[Type[T]] = None, *, target_dict: Optional[Mapping[Spec, Target]] = None,
-                    **target_kwargs: Target) -> Type[T]:
+    def formattable(self, cls: Optional[Type[T]] = None, *, reg: Optional[Registry] = None,
+                    **target_kwargs: Target) -> Union[Type[T], Callable[[Type[T]],Type[T]]]:
 
-        def decorator(c: Type[T]) -> Type[T]:
-            self.register_cls(c, target_dict, **target_kwargs)
-            return c
+        if reg is None:
+            reg = dict()
 
-        return decorator if cls is None else decorator(cls)
+        def formattable_dec(dec_cls: Type[T]) -> Type[T]:
+            reg.update(**target_kwargs)
+            self.register_cls(dec_cls, reg)
+            return dec_cls
 
-    def target(self, *specs: Union[Target, Spec]) -> Target:
+        return formattable_dec if cls is None else formattable_dec(cls)
 
-        method: Optional[Target] = None
+    def target(self, *specs: Union[Target, FormatSpec]) -> Target:
+
+        func: Optional[Target] = None
 
         if specs and not isinstance(specs[0], str):
-            method, *specs = specs
+            specs: Sequence[FormatSpec]
+            func, *specs = specs
 
         check_types(specs, str, SPECS_TYPE_ERROR)
 
-        def decorator(f: Target) -> Target:
-            self.register_target(f, *specs)
-            return f
+        def target_dec(func: Target) -> Target:
+            self.register_target(func, specs)
+            return func
 
-        return decorator if method is None else decorator(method)
+        return target_dec if func is None else target_dec(func)
 
-    def format_field(self, value: T, format_spec: Spec) -> ResultStr:
+    def format_field(self, value: T, format_spec: FormatSpec) -> FormatString:
         """Use the target associated with format_spec to produce the formatted string version of value"""
 
-    def lookup_cls_target(self: SimpleFormatter, obj: T, format_spec: Spec) -> Target:
+    def lookup_cls_target(self: SimpleFormatter, obj: T, format_spec: FormatSpec) -> Target:
         try:
             return self.cls_reg[type(obj)][format_spec]
         except KeyError:
             raise SimpleFormatterError(f"no class-level target for spec: {format_spec!r}")
 
-    def lookup_gen_target(self: SimpleFormatter, format_spec: Spec) -> Target:
+    def lookup_gen_target(self: SimpleFormatter, format_spec: FormatSpec) -> Target:
         try:
             return self.target_reg[format_spec]
         except KeyError:
             raise SimpleFormatterError(f"no target for spec: {format_spec!r}")
 
-    def register_cls(self, cls: Type[T], target_dict: Optional[Mapping[Spec, Target]] = None,
-                     **target_kwargs: Target) -> None:
-        setattr(cls, DEFAULT_DUNDER_FORMAT, getattr(cls, DEFAULT_DUNDER_FORMAT, cls.__format__))
+    def register_cls(self, cls: Type[T], reg: Registry) -> None:
+        setattr(cls, DEFAULT__FORMAT__, getattr(cls, DEFAULT__FORMAT__, cls.__format__))
         cls.__format__ = _new__format__
-        self.cls_reg[cls] = dict()
-        if target_dict is None:
-            target_dict = {}
-        self.cls_reg[cls].update(target_dict, **target_kwargs)
+
         try:
-            getattr(cls, FORMATTERS).append(self)
+            formatters = getattr(cls, FORMATTERS)
         except AttributeError:
             setattr(cls, FORMATTERS, [self])
+        else:
+            formatters.append(self)
 
-    def register_target(self, target: Target, *specs: Spec) -> None:
-        self.target_reg.update(zip(specs, repeat(target)))
+        try:
+            self.cls_reg[cls].update(reg)
+        except KeyError:
+            self.cls_reg[cls] = reg
+
+    def register_target(self, target: Target, specs: Union[FormatSpec, Iterable[FormatSpec]]) -> None:
+        specs_tup: Tuple[FormatSpec] = (specs,) if isinstance(specs, str) else tuple(specs)
+
+        self.target_reg.update(zip(specs_tup, repeat(target)))
 
 
 def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[str, Iterable[str]]) -> None:
@@ -233,4 +253,3 @@ def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[s
                              if not isinstance(obj, type_)))
     except StopIteration:
         pass
-
