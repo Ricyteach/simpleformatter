@@ -1,317 +1,334 @@
-# -*- coding: utf-8 -*-
+from __future__ import annotations
 
-"""Main module."""
-import functools
 from inspect import signature
-from copy import deepcopy
-
 from itertools import repeat
-
-# # re-create object.__format__ error message
-# default_type_error_msg = "unsupported format string passed to {cls.__qualname__}.__format__"
-
-empty_str = ""  # for readability
-GEN_SPECS_ATTR = "_simpleformatter_general_specs"  # formatting function attribute holding a set of specs that use it
-METH_SPECS_ATTR = "_simpleformatter_method_specs"  # formatting function attribute holding a set of specs that use it
-CLS_REG_ATTR = "_simpleformatter_registry"  # formattable class attr holding registry
-GEN_REG = dict()  # general registry holds spec: function pairs applicable to general scope (all formattable types)
-
-
-class NoArgType:
-    def __repr__(self):
-        return "NO_ARG"
-
-
-NO_ARG = NoArgType()
-
-
-def _negotiate_decorator(dec, pos1):
-    """Determine if the decorator was called with or without a first arg when it was invoked and act accordingly"""
-
-    if pos1 is NO_ARG:
-        return dec
-    return dec(pos1)
-
-
-def _add_registry(cls, reg):
-    """Attach a formatter registry to the class object"""
-    try:
-        setattr(cls, CLS_REG_ATTR, reg)
-    except TypeError as e:
-        import builtins
-        if cls in vars(builtins).values():
-            raise TypeError(f"the {cls!s} builtin cannot be modified with simpleformatter functionality") from e
-        raise e
-
-
-def _get_cls_registry(cls):
-    """Retrieve the formatter registry from the class object; raise SimpleFormatterError when not found"""
-    try:
-        return getattr(cls, CLS_REG_ATTR)
-    except AttributeError as e:
-        raise SimpleFormatterError(f"{cls.__qualname__} class has no {CLS_REG_ATTR} registry") from e
-
-
-def _wrap_cls__format__(cls):
-    """Private function to decorate cls.__format__ function"""
-
-    @functools.wraps(cls.__format__)
-    def _new__format__(self, format_spec=""):
-        """Wrapper for the cls.__format__ method; falls back on default behavior when no formatter found"""
-
-        try:
-            formatter = _lookup_formatter(cls, format_spec)
-        except SimpleFormatterError as e1:
-            try:
-                # formatter not found for format_spec; attempt fall back on default __format__ functionality
-                return cls._default__format__(self, format_spec)
-            except Exception as e2:
-                # if default functionality fails, raise from previous exception for clarity
-                raise e2 from e1
-        else:
-            # user defined simpleformatter function *may* discard arguments for convenience (staticmethod)
-            if len(signature(formatter).parameters) == 0:
-                return formatter()
-            # user defined simpleformatter function *may* discard format_spec argument for convenience (DRY!)
-            # TODO: figure out if want to allow discarding self and keeping format_spec? how to do? check staticmethod??
-            if len(signature(formatter).parameters) == 1:
-                return formatter(self)
-            return formatter(self, format_spec)
-
-    cls.__format__, cls._default__format__ = deepcopy(_new__format__), deepcopy(cls.__format__)
-
-
-def _lookup_cls_formatter(cls, format_spec):
-    """Gets the corresponding class formatting function, raises SimpleFormatterError if one isn't found"""
-
-    for cls_obj in cls.__mro__:
-        try:
-            return _get_cls_registry(cls_obj)[format_spec]
-        except KeyError:
-            continue
-
-    raise SimpleFormatterError(f"no {format_spec!r} format_spec found for {cls.__qualname__} class")
-
-
-def _lookup_general_formatter(format_spec):
-    """Gets the corresponding general formatting function, raises SimpleFormatterError if one isn't found"""
-    try:
-        return GEN_REG[format_spec]
-    except KeyError:
-        raise SimpleFormatterError(f"no {format_spec!r} format_spec found in general registry")
-
-
-def _lookup_formatter(cls, format_spec):
-    """Gets the corresponding formatting function, raises SimpleFormatterError if one isn't found"""
-    try:
-        return _lookup_cls_formatter(cls, format_spec)
-    except SimpleFormatterError as e1:
-        try:
-            return _lookup_general_formatter(format_spec)
-        except SimpleFormatterError as e2:
-            raise SimpleFormatterError(f"no {format_spec!r} format_spec found")
-
-
-def _register_all_formatters(cls):
-    """Register the formatting functions marked in the class __dict__"""
-
-    formatter_dict = dict()
-
-    # traverse in forward order so most recently defined formatter is registered for each spec
-    for member in vars(cls).values():
-        for format_spec in getattr(member, METH_SPECS_ATTR, ()):
-            formatter_dict.update({format_spec: member})
-
-    reg = _get_cls_registry(cls)
-    _register_formatters(formatter_dict, reg)
-
-
-def _register_formatters(formatter_dict, registry):
-    """Register the spec with its formatting function and place in class registry"""
-
-    if not all(isinstance(k, str) for k in formatter_dict.keys()):
-        # specs must be strings
-        raise TypeError(f"{next(s for s in formatter_dict.keys() if not isinstance(s, str))!r} spec is not a str")
-
-    registry.update(formatter_dict)
-
-
-def _class_decorator(pos1, formatter_dict):
-    """Private decorator for adding customized __format__ method and formatter registry to class."""
-    # TODO: implement spec/formatter handling on the class level:
-    #   @simpleformatter(spec="spec", func=spec_handler)
-    #   class C: ...
-
-    def wrap_cls__format__(cls):
-        _add_registry(cls, formatter_dict)
-        _register_all_formatters(cls)
-        _check_for_general_formatters(cls)
-        _wrap_cls__format__(cls)
-        return cls
-
-    return _negotiate_decorator(wrap_cls__format__, pos1)
-
-
-def _check_for_general_formatters(cls):
-    """check to see if any class methods erroneously decorated by @general instead of @method"""
-    if any(hasattr(member, GEN_SPECS_ATTR) for member in vars(cls).values()):
-        raise SimpleFormatterError(f"the function decorator should never be used on methods like "
-                                   f"{next(member for member in dict(cls).values() if hasattr(member, GEN_SPECS_ATTR))}")
-
-
-def _mark_formatter(func, specs_attr, *specs):
-    """Attach specs to a formatter function"""
-
-    # spec assumed to be only empty_str when empty
-    try:
-        specs_set = set(specs if specs else (empty_str,))
-    except TypeError as e:
-        raise SimpleFormatterError("specs must be hashable") from e
-
-    try:
-        func_spec_set = getattr(func, specs_attr)
-    except AttributeError:
-        setattr(func, specs_attr, specs_set)
-    else:
-        func_spec_set.update(specs_set)
-
-
-def _handle_decorator_args(check_type, *args):
-    """Figure out how the decorator was applied and return appropriate arguments tuple in form of:
-
-        thing to be decorated, arg1, arg2, etc.
-
-    the thing to be decorated will be NO_ARG if it wasn't yet supplied to the decorator as an argument
-    """
-    if not isinstance(check_type, type):
-        raise SimpleFormatterError("decorator handling failed- check_type must be a type")
-
-    to_decorate = NO_ARG
-
-    try:
-        # extract first argument to test if it is a spec string
-        pos1, *args = args
-    except ValueError:
-        # assume decorator was applied with no positional arguments like:
-        #
-        #    @decorator()
-        #
-        to_decorate = NO_ARG
-    else:
-        if isinstance(pos1, check_type):
-            # assume decorator was applied like:
-            #
-            #    @decorator(check_type_inst1[, type_inst])
-            #
-            args = (pos1, *args)
-        else:
-            # assume first argument is NOT a check_type_inst, e.g.:
-            #
-            #    @decorator
-            #    class OtherType: ...
-            #
-            # or:
-            #
-            #    @decorator
-            #    def func(): ...
-            #
-            to_decorate = pos1
-
-    return (to_decorate, *args)
-
-
-def _callable_decorator(*specs, callable_registry=None):
-    """Private decorator for all functions (methods and non-methods)"""
-
-    # determine how api decorator *args were supplied (to_decorate may be NO_ARGS)
-    to_decorate, *specs = _handle_decorator_args(str, *specs)
-
-    def decorator_inner(func):
-        """Actual decorator; meth is a function (method and non-method)"""
-
-        nonlocal specs, callable_registry
-
-        if not callable(func):
-            raise TypeError(f"{func!r} not a callable")
-        if callable_registry is not None:
-            _mark_formatter(func, GEN_SPECS_ATTR, *specs)
-            # register general function formatters only, method registration occurs during @formattable decoration
-            _register_formatters(dict(zip(specs, repeat(func))), callable_registry)
-        else:
-            _mark_formatter(func, METH_SPECS_ATTR, *specs)
-        return func
-
-    return _negotiate_decorator(decorator_inner, to_decorate)
-
-
-"""api decorators
-
-The api decorators are formattable, method, and function
-
-Examples:
-
-    @function("spec_f1", "spec_f2")
-    def fmtr(): ...
-    
-    @formattable
-    class A: ...
-    
-    @formattable
-    class B: ...
-      @method("spec_m1", "spec_m2")
-      def fmtr(): ...
-    
-    >>> f"{A():spec_f1}"
-    >>> f"{A():spec_f2}"
-    >>> f"{B():spec_m1}"
-    >>> f"{B():spec_m2}"
-    >>> f"{B():spec_f1}"
-    >>> f"{B():spec_f2}"
-"""
-
-
-def function(*specs):
-    """simpleformatter api decorator for non-method functions
-
-    raises SimpleFormatterError if applied to a formattable class method (use function decorated instead)
-    """
-
-    # non-method functions are tracked in the general registry
-    return _callable_decorator(*specs, callable_registry=GEN_REG)
-
-
-def method(*specs, cls=None):
-    """simpleformatter api decorator for methods of formattable classes; monkey patched methods must specify the cls"""
-
-    # the method's class cannot be known at runtime so we will track method functions in their rspective class
-    # registries (ie, not callable_registry kwarg supplied to _callable_decorator)
-    return _callable_decorator(*specs)
-
-
-def formattable(cls=NO_ARG, *, formatter_dict=None, **formatter_kwargs):
-    """simpleformatter api decorator for classes"""
-
-    # in case someone erroneously puts the formatter_dict as positional argument
-    if not isinstance(cls, (type, NoArgType)):
-        raise TypeError(f"cls not a type; decorator erroneously applied to a {cls.__qualname__} object")
-
-    def api_decorator(cls_arg):
-        """Actual decorator; cls_arg is a type"""
-
-        nonlocal formatter_dict, formatter_kwargs
-
-        if not isinstance(cls_arg, type):
-            raise SimpleFormatterError(f"{formattable.__name__} decorator should only be used when decorating a class")
-
-        if formatter_dict is None:
-            formatter_dict = dict(**formatter_kwargs)
-        else:
-            formatter_dict.update(**formatter_kwargs)
-        return _class_decorator(cls_arg, formatter_dict)
-
-    return _negotiate_decorator(api_decorator, cls)
+from string import Formatter
+from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence, Any, Iterable, \
+    Tuple
+
+Sentinel = type("Sentinel", (), {})
+SENTINEL = Sentinel()
+FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
+DEFAULT__FORMAT__ = "_default__format__"  # attr name to keep reference to original __format__
+SPECS = "specifiers"  # formatmethod specifiers holder attribute name
+
+# repeated error messages
+SPECS_TYPE_ERROR = "format specifiers must be {type_name!s}, not {obj.__class__.__qualname__!s}"
+TARGET_TYPE_ERROR = "format function targets must be {type_name!s}, not {obj.__class__.__qualname__!s}"
+
+# for type hinting
+T = TypeVar("T")
+FormatString = NewType("FormatString", str)
+FormatSpec = NewType("FormatSpec", str)
+Target = Callable[..., FormatString]
+Registry = Mapping[FormatSpec, Target]
+FormatDict = Dict[FormatSpec, Target]
 
 
 class SimpleFormatterError(Exception):
-    """I'm an exception. Kneel before me. Lower."""
     pass
+
+
+def _new__format__(self: Any, format_spec: FormatSpec) -> FormatString:
+    """Replacement __format__ formatmethod for formattable decorated classes"""
+
+    if not isinstance(format_spec, str):
+        raise TypeError(f"__format__() argument must be str, not {type(format_spec).__qualname__!s}")
+
+    target: Target
+    try:
+        target = compute_formatting_func(self, format_spec)
+    except SimpleFormatterError:
+        try:
+            target = getattr(type(self), DEFAULT__FORMAT__)
+        except AttributeError:
+            raise ValueError("invalid format specifier")
+        else:
+            return target(self, format_spec)
+
+    # user defined targets *may* discard arguments for convenience
+    # TODO: figure out if want to allow discarding self and keeping format_spec? how to do? check staticmethod??
+    if len(signature(target).parameters) == 0:
+        return target()
+    if len(signature(target).parameters) == 1:
+        return target(self)
+    return target(self, format_spec)
+
+
+def compute_formatting_func(obj: Any, format_spec: FormatSpec) -> Target:
+    """Uses the SimpleFormatters and formatmethods associated with obj to compute a formatting function.
+
+    Raises SimpleFormatterError if obj has no associated SimpleFormatter for that format specifier.
+    """
+
+    # get any formatmethod first and check if it is set to override
+    format_method: Optional[formatmethod]
+    try:
+        format_method = lookup_formatmethod(obj, format_spec)
+    except SimpleFormatterError:
+        format_method = None
+    else:
+        # formatmethod with override comes first
+        if format_method.override:
+            return format_method.__func__
+
+    # the specifier target is next priority
+    try:
+        return compute_target(obj, format_spec)
+    except SimpleFormatterError as e:
+        if format_method is None:
+            raise e
+        else:
+            # formatmethod with no override comes last
+            return format_method.__func__
+
+
+def compute_target(obj: Any, format_spec: FormatSpec) -> Target:
+    """Retrieve the target formatting function given an object and format specifier.
+
+    The SimpleFormatters associated with obj are combined to find the target.
+    """
+
+    cls = type(obj)
+    empty_dict = dict()
+
+    # build composite registries from formatters
+    composite_cls_reg: FormatDict = dict()
+    composite_target_reg: FormatDict = dict()
+
+    fmtr: SimpleFormatter
+    for fmtr in getattr(obj, FORMATTERS):
+        composite_cls_reg.update(fmtr.cls_reg.get(cls, empty_dict))
+        composite_target_reg.update(fmtr.target_reg)
+
+    try:
+        # formattable decorator first
+        return composite_cls_reg[format_spec]
+    except KeyError:
+        try:
+            # target decorators second
+            return composite_target_reg[format_spec]
+        except KeyError:
+            # signal spec handling failure
+            raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
+
+
+def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> formatmethod:
+    """Retrieve the obj formatmethod that utilizes the format_spec, if it exists.
+
+    Raises SimpleFormatterError if one is not found.
+    """
+
+    try:
+        cls = type(obj)
+        # perform lookup based on the cls's formatmethod-like objects (ie, objects with a SPECS attribute)
+        # the MOST RECENTLY DEFINED method using the format_spec is the one we want
+        return next(cls_member for cls_member in (getattr(cls, attr, None) for attr in reversed(dir(obj)))
+                      if format_spec in getattr(cls_member, SPECS, ()))
+    except StopIteration:
+        raise SimpleFormatterError()
+
+
+class formatmethod:
+    """formatmethod decorator, applied to formattable class methods that return a string representation of an instance.
+
+    Optionally provide specifier strings (no spec provided means the method will be used when there is no spec).
+
+    >>> @formattable
+    ... class C:
+    ...     @formatmethod
+    ...     def my_formatter1(self):
+    ...         return "Formatted C object"
+    ...     @formatmethod("spec")
+    ...     def my_formatter2(self):
+    ...         return "Formatted C object spec"
+    ...
+    >>> f"{C()}"  # no specifier, my_formatter1 called
+    'Formatted C object'
+    >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
+    'Formatted C object spec'
+    """
+
+    def __init__(self, *specs: Union[Target, FormatSpec], override: bool = False) -> None:
+
+        self.override: bool = override
+
+        method: Union[Sentinel, Target] = SENTINEL
+
+        # first specifier may be decorator argument
+        if specs and not isinstance(specs[0], str):
+            method: Target
+            specs: Sequence[FormatSpec]
+            method, *specs = specs
+
+        check_types(specs, str, SPECS_TYPE_ERROR)
+
+        # associate specs with this formatmethod, and guard against double decorators, no specs == empty string spec
+        setattr(self, SPECS, set(specs) if specs else {"",})
+
+        # apply decorator if called with no arguments
+        if method is not SENTINEL:
+            self(method)
+
+    def __get__(self, instance, owner) -> Target:
+        if instance is not None:
+            return self.__func__.__get__(instance, owner)
+        return self
+
+    def __call__(self, method: Target) -> formatmethod:
+        check_types(method, Callable, TARGET_TYPE_ERROR)
+        getattr(self, SPECS).update(getattr(method, SPECS, set()))
+        self._method = getattr(method, "__func__", method)
+        return self
+
+    @property
+    def __func__(self) -> Target:
+        """The formatting method decorated by formatmethod"""
+
+        return self._method
+
+    def __str__(self):
+        return f"{type(self).__qualname__}({self.__func__.__name__})"
+
+
+class SimpleFormatter(Formatter, Generic[T]):
+    """Handles dispatch to formatting functions based on specifier strings.
+
+    The following API decorators are methods of this class:
+    - formattable
+    - target
+
+    An instance of this class, as well as references to the API decorators, are provided at the top level of the package
+    for convenience:
+    >>> from simpleformatter import simpleformatter  # convenience instance
+    >>> from simpleformatter import formattable  # decorator for classes
+    >>> from simpleformatter import target  # decorator for formatting functions
+    """
+
+    target_reg: FormatDict
+    cls_reg: Dict[Type[T], FormatDict]
+
+    def __init__(self) -> None:
+        self.target_reg = dict()
+        self.cls_reg = dict()
+
+    def formattable(self, cls: Optional[Type[T]] = None, *, reg: Optional[Registry] = None,
+                    **target_kwargs: Target) -> Union[Type[T], Callable[[Type[T]],Type[T]]]:
+        """formattable decorator, applied to classes. Decorated class is registered with the SimpleFormatter, and
+        cls.__format__ is overridden.
+
+        Optionally provide a registry or kwargs that maps specifier strings to formatting functions.
+
+        >>> def my_formatter1(obj):
+        ...     return 'my_formatter1 formatted the object'
+        ...
+        >>> def my_formatter2(obj, spec):  # a second argument for the spec is optional
+        ...     return f'my_formatter2 formatted the object with {spec}'
+        ...
+        >>> @formattable(reg={'': my_formatter1}, spec=my_formatter2)
+        ... class C: ...
+        ...
+        >>> f"{C()}"  # no specifier, my_formatter1 called
+        'my_formatter1 formatted the object'
+        >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
+        'my_formatter2 formatted the object with spec'
+        """
+
+        if reg is None:
+            reg = dict()
+
+        def formattable_dec(dec_cls: Type[T]) -> Type[T]:
+            reg.update(**target_kwargs)
+            self.register_cls(dec_cls, reg)
+            return dec_cls
+
+        return formattable_dec if cls is None else formattable_dec(cls)
+
+    def target(self, *specs: Union[Target, FormatSpec]) -> Target:
+        """target decorator, applied to functions that return a string representation of some formattable object.
+
+        Optionally provide specifier strings (no spec provided means the function will be used when there is no spec).
+
+        >>> @target
+        ... def my_formatter1(obj):
+        ...     return 'my_formatter1 formatted the object'
+        ...
+        >>> @target('spec')
+        ... def my_formatter2(obj, spec):  # a second argument for the spec is optional
+        ...     return f'my_formatter2 formatted the object with {spec}'
+        ...
+        >>> @formattable
+        ... class C: ...
+        ...
+        >>> f"{C()}"  # no specifier, my_formatter1 called
+        'my_formatter1 formatted the object'
+        >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
+        'my_formatter2 formatted the object with spec'
+        """
+
+        func: Union[Sentinel, Target] = SENTINEL
+
+        if specs and not isinstance(specs[0], str):
+            specs: Sequence[FormatSpec]
+            func, *specs = specs
+
+        def target_dec(func: Target) -> Target:
+            self.register_target(func, specs)
+            return func
+
+        return target_dec if func is SENTINEL else target_dec(func)
+
+    def register_cls(self, cls: Type[T], reg: Registry) -> None:
+        """Associate the cls with the SimpleFormatter instance for formatting."""
+
+        # if not previously done for this class, override the __format__ method, keep a reference to the old one
+        setattr(cls, DEFAULT__FORMAT__, getattr(cls, DEFAULT__FORMAT__, cls.__format__))
+        cls.__format__ = _new__format__
+
+        # add the SimpleFormatter to the SF list (create the list if this is the first one)
+        try:
+            formatters = getattr(cls, FORMATTERS)
+        except AttributeError:
+            setattr(cls, FORMATTERS, [self])
+        else:
+            formatters.append(self)
+
+        # update the cls registry with reg, or use reg as the new registry if cls registry doesn't exist
+        try:
+            self.cls_reg[cls].update(reg)
+        except KeyError:
+            self.cls_reg[cls] = reg
+
+    def register_target(self, target: Target, specs: Union[FormatSpec, Iterable[FormatSpec]]) -> None:
+        """Associate the target formatting function with the SimpleFormatter instance for formatting."""
+
+        specs_tup: Tuple[FormatSpec] = (specs,) if isinstance(specs, str) else tuple(specs)
+        check_types(specs_tup, str, SPECS_TYPE_ERROR)
+        check_types(target, Callable, TARGET_TYPE_ERROR)
+
+        # update the target registry with the specifiers
+        self.target_reg.update(zip(specs_tup, repeat(target)))
+
+
+def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[str, Iterable[str]]) -> None:
+    """Utility for enforcing type requirements on arguments.
+
+    Error message strings use the kwargs `type_name` and `obj`, and can be of the form, or variants:
+        "arg1 must be {type_name!s}, not {obj.__class__.__qualname__!s}"
+    """
+
+    if isinstance(objs, str) or not isinstance(objs, Iterable):
+        objs = objs,
+
+    if not isinstance(types, Iterable):
+        types = repeat(types)
+
+    if isinstance(err_msgs, str) or not isinstance(err_msgs, Iterable):
+        err_msgs = repeat(err_msgs)
+
+    try:
+        raise TypeError(next(msg.format(obj=obj, type_name=getattr(type_,"__qualname__",str(type_)))
+                             for obj, type_, msg in zip(objs, types, err_msgs)
+                             if not isinstance(obj, type_)))
+    except StopIteration:
+        pass

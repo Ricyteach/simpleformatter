@@ -2,35 +2,29 @@
 # -*- coding: utf-8 -*-
 
 """Share fixtures for `simpleformatter` package."""
+from copy import deepcopy
 
 import pytest
+import simpleformatter
+
+global_simpleformatter = simpleformatter.simpleformatter
 
 
 @pytest.fixture
-def simpleformatter():
-    """reimport fresh copy of the module each time"""
-    import simpleformatter
-    return simpleformatter
+def sf_copy():
+    return deepcopy(global_simpleformatter)
 
 
 @pytest.fixture
-def SimpleFormatterError(simpleformatter):
-    from simpleformatter.simpleformatter import SimpleFormatterError
-    return SimpleFormatterError
-
-@pytest.fixture
-def formattable(simpleformatter):
-    from simpleformatter.simpleformatter import formattable
-    return formattable
+def formattable(sf_copy):
+    return sf_copy.formattable
 
 
 @pytest.fixture
-def method(simpleformatter):
-    from simpleformatter.simpleformatter import method
-    return method
+def formatmethod():
+    return simpleformatter.formatmethod
 
 
 @pytest.fixture
-def function(simpleformatter):
-    from simpleformatter.simpleformatter import function
-    return function
+def target(sf_copy):
+    return sf_copy.target
