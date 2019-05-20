@@ -25,9 +25,10 @@ def gen_fmtr_func2():
 @pytest.fixture
 def A():
     class A:
-        test_results=defaultdict(lambda: None)
+        test_results = defaultdict(lambda: None)
         test_results.update(spec1="class A object with univ spec #1 = 'spec1'",
                             spec2="class A object with univ spec #2 = 'spec2'", ),
+
         def __str__(self):
             return "class A object"
     return A
@@ -78,20 +79,12 @@ def test_formatters_first(a_last, formatters_first, spec):
     assert f"{a_last:{spec!s}}" == a_last.test_results[spec]
 
 
-def test_wrong_use_of_function(formattable, target):
-    """Class methods should be decorated with formatmethod"""
-    with pytest.raises(TypeError):
-        @formattable
-        class X:
-            @target
-            def x(self):
-                ...
-
 @pytest.mark.parametrize("bad_arg", [
     None, 1, object(),
 ], ids= ("NoneType", "int", "object()"))
 def test_str_only_spec(bad_arg, target, formatmethod, formattable):
     """format specs must be strings (might change this requirement later...?)"""
+
     with pytest.raises(TypeError):
         @target(bad_arg)
         def f(): ...
@@ -104,6 +97,7 @@ def test_str_only_spec(bad_arg, target, formatmethod, formattable):
 
 def test_not_callable(target, formatmethod):
     """target and formatmethod decorators apply only to callables"""
+
     with pytest.raises(TypeError):
         target(1)
     with pytest.raises(TypeError):
@@ -111,5 +105,7 @@ def test_not_callable(target, formatmethod):
 
 
 def test_not_type(formattable):
+    """formattable should only be used on Type instances (classes)"""
+
     with pytest.raises(TypeError):
         formattable(int)

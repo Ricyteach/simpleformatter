@@ -196,6 +196,7 @@ def my_formatter():
 ])
 def test_formatter_function(cls_name, formatter_name, spec, A, ex_a, B, ex_b, C, ex_c, D, ex_d, my_formatter):
     """Does not test the api!!!! Makes sure the formatter_name functions for test suite example classes are working"""
+
     cls = eval(cls_name)
     obj = eval(f"ex_{cls_name.lower()}")
     formatter = eval(formatter_name)
@@ -239,6 +240,7 @@ def test_formatter_function(cls_name, formatter_name, spec, A, ex_a, B, ex_b, C,
 ])
 def test_simpleformatter_api(cls_name, spec, A, ex_a, B, ex_b, C, ex_c, D, ex_d, my_formatter):
     """The actual api tested here"""
+
     cls = eval(cls_name)
     obj = eval(f"ex_{cls_name.lower()}")
     result = cls.test_results[spec]

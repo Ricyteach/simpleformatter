@@ -11,9 +11,12 @@ SENTINEL = Sentinel()
 FORMATTERS = "_formatters"  # attr name to keep reference to applied simpleformatter instances
 DEFAULT__FORMAT__ = "_default__format__"  # attr name to keep reference to original __format__
 SPECS = "specifiers"  # formatmethod specifiers holder attribute name
+
+# repeated error messages
 SPECS_TYPE_ERROR = "format specifiers must be {type_name!s}, not {obj.__class__.__qualname__!s}"
 TARGET_TYPE_ERROR = "format function targets must be {type_name!s}, not {obj.__class__.__qualname__!s}"
 
+# for type hinting
 T = TypeVar("T")
 FormatString = NewType("FormatString", str)
 FormatSpec = NewType("FormatSpec", str)
@@ -53,11 +56,12 @@ def _new__format__(self: Any, format_spec: FormatSpec) -> FormatString:
 
 
 def compute_formatting_func(obj: Any, format_spec: FormatSpec) -> Target:
-    """Uses the Formatters and formatmethods associated with obj to compute a formatting function.
+    """Uses the SimpleFormatters and formatmethods associated with obj to compute a formatting function.
 
-    Raises SimpleFormatterError if obj has no associated Formatter(s)"""
+    Raises SimpleFormatterError if obj has no associated SimpleFormatter for that format specifier.
+    """
 
-    # get any formatmethod first and check if it takes take precedence
+    # get any formatmethod first and check if it is set to override
     format_method: Optional[formatmethod]
     try:
         format_method = lookup_formatmethod(obj, format_spec)
@@ -80,9 +84,9 @@ def compute_formatting_func(obj: Any, format_spec: FormatSpec) -> Target:
 
 
 def compute_target(obj: Any, format_spec: FormatSpec) -> Target:
-    """Retrieve the target given an object and format specifier.
+    """Retrieve the target formatting function given an object and format specifier.
 
-    The formatters associated with obj are combined to find the target.
+    The SimpleFormatters associated with obj are combined to find the target.
     """
 
     cls = type(obj)
@@ -112,7 +116,8 @@ def compute_target(obj: Any, format_spec: FormatSpec) -> Target:
 def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> formatmethod:
     """Retrieve the obj formatmethod that utilizes the format_spec, if it exists.
 
-    Raises SimpleFormatterError if one is not found."""
+    Raises SimpleFormatterError if one is not found.
+    """
 
     try:
         cls = type(obj)
@@ -125,7 +130,24 @@ def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> formatmethod:
 
 
 class formatmethod:
-    """formatmethod decorator. Accessed by _new__format__ returns a formatted version of the string."""
+    """formatmethod decorator, applied to formattable class methods that return a string representation of an instance.
+
+    Optionally provide specifier strings (no spec provided means the method will be used when there is no spec).
+
+    >>> @formattable
+    ... class C:
+    ...     @formatmethod
+    ...     def my_formatter1(self):
+    ...         return "Formatted C object"
+    ...     @formatmethod("spec")
+    ...     def my_formatter2(self):
+    ...         return "Formatted C object spec"
+    ...
+    >>> f"{C()}"  # no specifier, my_formatter1 called
+    'Formatted C object'
+    >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
+    'Formatted C object spec'
+    """
 
     def __init__(self, *specs: Union[Target, FormatSpec], override: bool = False) -> None:
 
@@ -161,6 +183,8 @@ class formatmethod:
 
     @property
     def __func__(self) -> Target:
+        """The formatting method decorated by formatmethod"""
+
         return self._method
 
     def __str__(self):
@@ -168,6 +192,18 @@ class formatmethod:
 
 
 class SimpleFormatter(Formatter, Generic[T]):
+    """Handles dispatch to formatting functions based on specifier strings.
+
+    The following API decorators are methods of this class:
+    - formattable
+    - target
+
+    An instance of this class, as well as references to the API decorators, are provided at the top level of the package
+    for convenience:
+    >>> from simpleformatter import simpleformatter  # convenience instance
+    >>> from simpleformatter import formattable  # decorator for classes
+    >>> from simpleformatter import target  # decorator for formatting functions
+    """
 
     target_reg: FormatDict
     cls_reg: Dict[Type[T], FormatDict]
@@ -178,6 +214,25 @@ class SimpleFormatter(Formatter, Generic[T]):
 
     def formattable(self, cls: Optional[Type[T]] = None, *, reg: Optional[Registry] = None,
                     **target_kwargs: Target) -> Union[Type[T], Callable[[Type[T]],Type[T]]]:
+        """formattable decorator, applied to classes. Decorated class is registered with the SimpleFormatter, and
+        cls.__format__ is overridden.
+
+        Optionally provide a registry or kwargs that maps specifier strings to formatting functions.
+
+        >>> def my_formatter1(obj):
+        ...     return 'my_formatter1 formatted the object'
+        ...
+        >>> def my_formatter2(obj, spec):  # a second argument for the spec is optional
+        ...     return f'my_formatter2 formatted the object with {spec}'
+        ...
+        >>> @formattable(reg={'': my_formatter1}, spec=my_formatter2)
+        ... class C: ...
+        ...
+        >>> f"{C()}"  # no specifier, my_formatter1 called
+        'my_formatter1 formatted the object'
+        >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
+        'my_formatter2 formatted the object with spec'
+        """
 
         if reg is None:
             reg = dict()
@@ -190,6 +245,26 @@ class SimpleFormatter(Formatter, Generic[T]):
         return formattable_dec if cls is None else formattable_dec(cls)
 
     def target(self, *specs: Union[Target, FormatSpec]) -> Target:
+        """target decorator, applied to functions that return a string representation of some formattable object.
+
+        Optionally provide specifier strings (no spec provided means the function will be used when there is no spec).
+
+        >>> @target
+        ... def my_formatter1(obj):
+        ...     return 'my_formatter1 formatted the object'
+        ...
+        >>> @target('spec')
+        ... def my_formatter2(obj, spec):  # a second argument for the spec is optional
+        ...     return f'my_formatter2 formatted the object with {spec}'
+        ...
+        >>> @formattable
+        ... class C: ...
+        ...
+        >>> f"{C()}"  # no specifier, my_formatter1 called
+        'my_formatter1 formatted the object'
+        >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
+        'my_formatter2 formatted the object with spec'
+        """
 
         func: Union[Sentinel, Target] = SENTINEL
 
@@ -203,25 +278,14 @@ class SimpleFormatter(Formatter, Generic[T]):
 
         return target_dec if func is SENTINEL else target_dec(func)
 
-    def format_field(self, value: T, format_spec: FormatSpec) -> FormatString:
-        """Use the target associated with format_spec to produce the formatted string version of value"""
-
-    def lookup_cls_target(self: SimpleFormatter, obj: T, format_spec: FormatSpec) -> Target:
-        try:
-            return self.cls_reg[type(obj)][format_spec]
-        except KeyError:
-            raise SimpleFormatterError(f"no class-level target for spec: {format_spec!r}")
-
-    def lookup_gen_target(self: SimpleFormatter, format_spec: FormatSpec) -> Target:
-        try:
-            return self.target_reg[format_spec]
-        except KeyError:
-            raise SimpleFormatterError(f"no target for spec: {format_spec!r}")
-
     def register_cls(self, cls: Type[T], reg: Registry) -> None:
+        """Associate the cls with the SimpleFormatter instance for formatting."""
+
+        # if not previously done for this class, override the __format__ method, keep a reference to the old one
         setattr(cls, DEFAULT__FORMAT__, getattr(cls, DEFAULT__FORMAT__, cls.__format__))
         cls.__format__ = _new__format__
 
+        # add the SimpleFormatter to the SF list (create the list if this is the first one)
         try:
             formatters = getattr(cls, FORMATTERS)
         except AttributeError:
@@ -229,20 +293,30 @@ class SimpleFormatter(Formatter, Generic[T]):
         else:
             formatters.append(self)
 
+        # update the cls registry with reg, or use reg as the new registry if cls registry doesn't exist
         try:
             self.cls_reg[cls].update(reg)
         except KeyError:
             self.cls_reg[cls] = reg
 
     def register_target(self, target: Target, specs: Union[FormatSpec, Iterable[FormatSpec]]) -> None:
+        """Associate the target formatting function with the SimpleFormatter instance for formatting."""
+
         specs_tup: Tuple[FormatSpec] = (specs,) if isinstance(specs, str) else tuple(specs)
         check_types(specs_tup, str, SPECS_TYPE_ERROR)
         check_types(target, Callable, TARGET_TYPE_ERROR)
 
+        # update the target registry with the specifiers
         self.target_reg.update(zip(specs_tup, repeat(target)))
 
 
 def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[str, Iterable[str]]) -> None:
+    """Utility for enforcing type requirements on arguments.
+
+    Error message strings use the kwargs `type_name` and `obj`, and can be of the form, or variants:
+        "arg1 must be {type_name!s}, not {obj.__class__.__qualname__!s}"
+    """
+
     if isinstance(objs, str) or not isinstance(objs, Iterable):
         objs = objs,
 

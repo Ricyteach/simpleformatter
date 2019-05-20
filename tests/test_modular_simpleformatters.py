@@ -56,6 +56,7 @@ def test_modular_functions(spec, obj1, func1, obj2, func2):
 
 
 def test_modular_methods(sf1, sf2, formatmethod):
+    """make sure using sf1 and sf2 on the same class also works"""
 
     @sf1.target("spec1")
     def f1(obj):
