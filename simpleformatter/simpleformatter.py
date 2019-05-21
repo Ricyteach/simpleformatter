@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from inspect import signature
 from itertools import repeat
-from string import Formatter
-from typing import Optional, NewType, Callable, Dict, Mapping, Generic, TypeVar, Type, Union, Sequence, Any, Iterable, \
-    Tuple
+from typing import Optional, NewType, Callable, Dict, Mapping, TypeVar, Type, Union, Sequence, Any, Iterable, Tuple
 
 Sentinel = type("Sentinel", (), {})
 SENTINEL = Sentinel()
@@ -17,10 +15,11 @@ SPECS_TYPE_ERROR = "format specifiers must be {type_name!s}, not {obj.__class__.
 TARGET_TYPE_ERROR = "format function targets must be {type_name!s}, not {obj.__class__.__qualname__!s}"
 
 # for type hinting
-T = TypeVar("T")
+T_Type = TypeVar("T_Type", bound=Type)
 FormatString = NewType("FormatString", str)
 FormatSpec = NewType("FormatSpec", str)
 Target = Callable[..., FormatString]
+TargetDecorator = Callable[[Target], Target]
 Registry = Mapping[FormatSpec, Target]
 FormatDict = Dict[FormatSpec, Target]
 
@@ -191,7 +190,7 @@ class formatmethod:
         return f"{type(self).__qualname__}({self.__func__.__name__})"
 
 
-class SimpleFormatter(Formatter, Generic[T]):
+class SimpleFormatter:
     """Handles dispatch to formatting functions based on specifier strings.
 
     The following API decorators are methods of this class:
@@ -206,14 +205,13 @@ class SimpleFormatter(Formatter, Generic[T]):
     """
 
     target_reg: FormatDict
-    cls_reg: Dict[Type[T], FormatDict]
+    cls_reg: Dict[Type, FormatDict]
 
     def __init__(self) -> None:
         self.target_reg = dict()
         self.cls_reg = dict()
 
-    def formattable(self, cls: Optional[Type[T]] = None, *, reg: Optional[Registry] = None,
-                    **target_kwargs: Target) -> Union[Type[T], Callable[[Type[T]],Type[T]]]:
+    def formattable(self, cls: Optional[T_Type] = None, **kwargs: Target) -> Union[T_Type, Callable[[T_Type], T_Type]]:
         """formattable decorator, applied to classes. Decorated class is registered with the SimpleFormatter, and
         cls.__format__ is overridden.
 
@@ -234,17 +232,13 @@ class SimpleFormatter(Formatter, Generic[T]):
         'my_formatter2 formatted the object with spec'
         """
 
-        if reg is None:
-            reg = dict()
-
-        def formattable_dec(dec_cls: Type[T]) -> Type[T]:
-            reg.update(**target_kwargs)
-            self.register_cls(dec_cls, reg)
+        def formattable_dec(dec_cls: T_Type) -> T_Type:
+            self.register_cls(dec_cls, kwargs)
             return dec_cls
 
         return formattable_dec if cls is None else formattable_dec(cls)
 
-    def target(self, *specs: Union[Target, FormatSpec]) -> Target:
+    def target(self, *specs: Union[Target, FormatSpec]) -> Union[Target, TargetDecorator]:
         """target decorator, applied to functions that return a string representation of some formattable object.
 
         Optionally provide specifier strings (no spec provided means the function will be used when there is no spec).
@@ -278,7 +272,7 @@ class SimpleFormatter(Formatter, Generic[T]):
 
         return target_dec if func is SENTINEL else target_dec(func)
 
-    def register_cls(self, cls: Type[T], reg: Registry) -> None:
+    def register_cls(self, cls: Type, reg: Registry) -> None:
         """Associate the cls with the SimpleFormatter instance for formatting."""
 
         # if not previously done for this class, override the __format__ method, keep a reference to the old one
