@@ -215,7 +215,7 @@ class SimpleFormatter:
         """formattable decorator, applied to classes. Decorated class is registered with the SimpleFormatter, and
         cls.__format__ is overridden.
 
-        Optionally provide a registry or kwargs that maps specifier strings to formatting functions.
+        Optionally provide kwarg(s) that map specifier strings to formatting functions.
 
         >>> def my_formatter1(obj):
         ...     return 'my_formatter1 formatted the object'
