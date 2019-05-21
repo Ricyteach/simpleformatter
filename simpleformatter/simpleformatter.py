@@ -326,4 +326,4 @@ def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[s
         try:
             assert isinstance(obj, type_)
         except AssertionError:
-            raise TypeError(msg.format(obj=obj, type_name=getattr(type_, '__qualname__', str(type_))))
+            raise TypeError(msg.format(obj=obj, type_=type_, type_name=getattr(type_, '__qualname__', str(type_))))
