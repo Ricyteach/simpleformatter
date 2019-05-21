@@ -307,8 +307,10 @@ class SimpleFormatter:
 def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[str, Iterable[str]]) -> None:
     """Utility for enforcing type requirements on arguments.
 
-    Error message strings use the kwargs `type_name` and `obj`, and can be of the form, or variants:
-        "arg1 must be {type_name!s}, not {obj.__class__.__qualname__!s}"
+    Error message strings use the kwargs `type_name` and `obj`, and can be of these forms, or variants:
+
+        "arg1 must be {type_.__qualname__!s}, not {obj.__class__.__qualname__)!s}"
+        "arg1 must be {type_name!s}, not {obj.__class__.__qualname__)!s}"
     """
 
     if isinstance(objs, str) or not isinstance(objs, Iterable):
@@ -320,9 +322,8 @@ def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[s
     if isinstance(err_msgs, str) or not isinstance(err_msgs, Iterable):
         err_msgs = repeat(err_msgs)
 
-    try:
-        raise TypeError(next(msg.format(obj=obj, type_name=getattr(type_,"__qualname__",str(type_)))
-                             for obj, type_, msg in zip(objs, types, err_msgs)
-                             if not isinstance(obj, type_)))
-    except StopIteration:
-        pass
+    for obj, type_, msg in zip(objs, types, err_msgs):
+        try:
+            assert isinstance(obj, type_)
+        except AssertionError:
+            raise TypeError(msg.format(obj=obj, type_name=getattr(type_, '__qualname__', str(type_))))
