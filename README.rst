@@ -101,7 +101,7 @@ The `formatmethod` decorator makes the method a target of the formatting specifi
 
 >>> @formattable
 ... class Data(float):
-...     @formatmethod('', 'B')
+...     @formatmethod('Bytes', 'B')
 ...     def _repr_b_(self):
 ...         return f'{self} Bytes'
 ...     @formatmethod('KB')
