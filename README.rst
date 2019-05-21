@@ -89,9 +89,9 @@ Now the decorated formatting function will act as a target for any decorated use
 >>> @formattable
 ... class Depth(float): ...
 ...
->>> format_convert(Diameter(8.45), ".3ft")
+>>> f"{Diameter(8.45):.3ft}")
 '0.704 ft'
->>> format_convert(3.77, ".4mm")
+>>> f"{Depth(3.77):.4mm}")
 '95.76 mm'
 
 `formatmethod` decorator
