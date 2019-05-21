@@ -17,7 +17,8 @@ A quick way to add custom versatile formatting to objects
 
 
 * Free software: MIT license
-* Documentation: https://simpleformatter.readthedocs.io.
+* Python version 3.7+ (but 3.6 might work, too- haven't tried it yet)
+* Documentation: https://simpleformatter.readthedocs.io. (not set up yet)
 
 Introduction
 -------------
@@ -120,6 +121,12 @@ The `formatmethod` decorator makes the method a target of the formatting specifi
 '106.91953086853027 MB'
 >>> f'{Data(112_113_254):GB}'
 '0.1044136043637991 GB'
+
+ToDo
+----
+- Tox and docs are not set up yet
+- Some docstring tests are still broken (bad references in them)
+- Need to decide if supporting 3.6, or just 3.7+
 
 Credits
 -------
