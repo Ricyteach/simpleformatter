@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from inspect import signature
 from itertools import repeat
 from typing import Optional, NewType, Callable, Dict, Mapping, TypeVar, Type, Union, Sequence, Any, Iterable, Tuple
@@ -112,7 +110,7 @@ def compute_target(obj: Any, format_spec: FormatSpec) -> Target:
             raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
 
 
-def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> formatmethod:
+def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> 'formatmethod':
     """Retrieve the obj formatmethod that utilizes the format_spec, if it exists.
 
     Raises SimpleFormatterError if one is not found.
@@ -174,7 +172,7 @@ class formatmethod:
             return self.__func__.__get__(instance, owner)
         return self
 
-    def __call__(self, method: Target) -> formatmethod:
+    def __call__(self, method: Target) -> 'formatmethod':
         check_types(method, Callable, TARGET_TYPE_ERROR)
         getattr(self, SPECS).update(getattr(method, SPECS, set()))
         self._method = getattr(method, "__func__", method)
