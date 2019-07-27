@@ -1,0 +1,12 @@
+dist: xenial
+install:
+  - pip install -U --force-reinstall -r requirements_travis.txt
+language: python
+python:
+  - 3.6
+  - 3.7
+  - 3.8-dev
+script:
+  - python -V
+  - pip list
+  - pytest tests
