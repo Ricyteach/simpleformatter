@@ -2,6 +2,23 @@
 History
 =======
 
+0.4.0 (2026-08-16)
+------------------
+
+* Added: ``formatmethod`` accepts ``suffix=True``, completing the suffix support added to ``target`` in 0.3.0. A
+  method registered for ``MB`` now handles ``f"{data:.2fMB}"``, receiving ``.2f`` as its third argument.
+* The longest suffix wins across *different* formatmethods on the same class, so a class carrying both ``B`` and
+  ``MB`` methods resolves ``.0fMB`` to the ``MB`` one.
+* An exact specifier match is preferred over a suffix match when picking a formatmethod. Suffix formatmethods
+  otherwise keep their existing position in the resolution order: above everything when ``override=True``, below
+  the ``target`` registries when not.
+* Added: ``MethodMatch``, the named tuple now returned by ``lookup_formatmethod``, carrying the matched
+  formatmethod, its matched specifier and the leftover standard spec. It previously returned a bare formatmethod.
+* The empty specifier is still never treated as a suffix, on ``formatmethod`` as on ``target``.
+
+Suffix matching is now available on both ``target`` and ``formatmethod``. It remains unavailable on the
+``formattable(spec=func)`` keyword argument form, whose specifiers double as keyword argument names.
+
 0.3.0 (2026-08-16)
 ------------------
 

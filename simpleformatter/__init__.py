@@ -41,7 +41,7 @@ from .simpleformatter import SimpleFormatter, SimpleFormatterError, formatmethod
 
 __author__ = """Ricky L Teachey Jr"""
 __email__ = 'ricky@teachey.org'
-__version__ = '0.3.0'
+__version__ = '0.4.0'
 
 __all__ = ["SimpleFormatter", "SimpleFormatterError", "formatmethod", "formattable", "simpleformatter", "target"]
 

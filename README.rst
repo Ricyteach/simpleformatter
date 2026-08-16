@@ -191,6 +191,24 @@ One gotcha worth knowing: a bare precision like ``.1`` means *one significant di
 >>> f'{Length(12):.3m}'
 '0.305 m'
 
+``formatmethod`` takes ``suffix=True`` as well, for specifiers belonging to a single class:
+
+>>> @formattable
+... class Size(float):
+...     @formatmethod('B', suffix=True)
+...     def _repr_b_(self, spec, std_spec):
+...         return f'{float(self):{std_spec}} {spec}'
+...     @formatmethod('MB', suffix=True)
+...     def _repr_mb_(self, spec, std_spec):
+...         return f'{self/1024**2:{std_spec}} {spec}'
+...
+>>> f'{Size(112_113_254):.0fB}'
+'112113254 B'
+>>> f'{Size(112_113_254):.2fMB}'
+'106.92 MB'
+
+The longest match wins across methods too, so ``MB`` beats ``B``.
+
 Resolution order
 ~~~~~~~~~~~~~~~~
 
@@ -202,6 +220,9 @@ When more than one of the above could handle a specifier, they are tried in this
 4. the longest *suffix* specifier registered via ``target(..., suffix=True)``
 5. a ``formatmethod`` without ``override``
 6. the class's original ``__format__``
+
+Within steps 1 and 5, a ``formatmethod`` matching the whole spec exactly is preferred over one matching a suffix,
+and among competing suffix matches the longest wins.
 
 Step 6 means built-in specifiers keep working on a decorated class — unrecognized specifiers are handed back to the
 original machinery rather than raising:
@@ -221,8 +242,9 @@ Limitations
 suffix that collides with one of ``b c d e E f F g G n o s x X %`` will capture ordinary format specs — registering
 ``f`` as a suffix would swallow ``.2f``. Multi-character unit names do not run into this.
 
-**Suffix matching is only available on** ``target``. ``formatmethod`` and the ``formattable`` keyword arguments
-still match the whole spec exactly.
+**The** ``formattable`` **keyword argument form always matches exactly.** Suffix matching is available on both
+``target`` and ``formatmethod``, but not on ``formattable(spec=func)``, whose specifiers double as keyword argument
+names.
 
 Development
 -----------

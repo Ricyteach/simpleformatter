@@ -40,6 +40,17 @@ class Resolution(NamedTuple):
     std_spec: FormatSpec = ""
 
 
+class MethodMatch(NamedTuple):
+    """A formatmethod matched against a format spec, with the specifier it matched and whatever preceded it.
+
+    Split out from Resolution because the priority rules need the formatmethod itself, to consult its override flag.
+    """
+
+    method: 'formatmethod'
+    spec: FormatSpec
+    std_spec: FormatSpec = ""
+
+
 def _new__format__(self: Any, format_spec: FormatSpec) -> FormatString:
     """Replacement __format__ formatmethod for formattable decorated classes"""
 
@@ -77,25 +88,25 @@ def compute_formatting_func(obj: Any, format_spec: FormatSpec) -> Resolution:
     """
 
     # get any formatmethod first and check if it is set to override
-    format_method: Optional[formatmethod]
+    match: Optional[MethodMatch]
     try:
-        format_method = lookup_formatmethod(obj, format_spec)
+        match = lookup_formatmethod(obj, format_spec)
     except SimpleFormatterError:
-        format_method = None
+        match = None
     else:
         # formatmethod with override comes first
-        if format_method.override:
-            return Resolution(format_method.__func__, format_spec)
+        if match.method.override:
+            return Resolution(match.method.__func__, match.spec, match.std_spec)
 
     # the specifier target is next priority
     try:
         return compute_target(obj, format_spec)
     except SimpleFormatterError as e:
-        if format_method is None:
+        if match is None:
             raise e
         else:
             # formatmethod with no override comes last
-            return Resolution(format_method.__func__, format_spec)
+            return Resolution(match.method.__func__, match.spec, match.std_spec)
 
 
 def compute_target(obj: Any, format_spec: FormatSpec) -> Resolution:
@@ -136,20 +147,39 @@ def compute_target(obj: Any, format_spec: FormatSpec) -> Resolution:
     raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
 
 
-def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> 'formatmethod':
+def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> MethodMatch:
     """Retrieve the obj formatmethod that utilizes the format_spec, if it exists.
+
+    An exact specifier match wins. Failing that, the longest suffix among the formatmethods declared with
+    suffix=True is used, so '.2MB' can resolve to a formatmethod registered for 'MB'.
 
     Raises SimpleFormatterError if one is not found.
     """
 
-    try:
-        cls = type(obj)
-        # perform lookup based on the cls's formatmethod-like objects (ie, objects with a SPECS attribute)
-        # the MOST RECENTLY DEFINED method using the format_spec is the one we want
-        return next(cls_member for cls_member in (getattr(cls, attr, None) for attr in reversed(dir(obj)))
-                    if format_spec in getattr(cls_member, SPECS, ()))
-    except StopIteration:
+    cls = type(obj)
+    # perform lookup based on the cls's formatmethod-like objects (ie, objects with a SPECS attribute)
+    # the MOST RECENTLY DEFINED method using the format_spec is the one we want
+    cls_members = [getattr(cls, attr, None) for attr in reversed(dir(obj))]
+
+    for cls_member in cls_members:
+        if format_spec in getattr(cls_member, SPECS, ()):
+            return MethodMatch(cls_member, format_spec)
+
+    # no exact match, so fall back to the longest suffix declared by a suffix formatmethod; the empty specifier is
+    # skipped because it is a suffix of every format spec there is
+    best: Optional[Tuple[Any, FormatSpec]] = None
+    for cls_member in cls_members:
+        if not getattr(cls_member, "suffix", False):
+            continue
+        for spec in getattr(cls_member, SPECS, ()):
+            if spec and format_spec.endswith(spec) and (best is None or len(spec) > len(best[1])):
+                best = (cls_member, spec)
+
+    if best is None:
         raise SimpleFormatterError()
+
+    cls_member, spec = best
+    return MethodMatch(cls_member, spec, format_spec[:-len(spec)])
 
 
 class formatmethod:
@@ -170,11 +200,26 @@ class formatmethod:
     'Formatted C object'
     >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
     'Formatted C object spec'
+
+    Pass suffix=True to match the specifier at the *end* of a format spec rather than as the whole of it. The method
+    may then take a third argument, which receives the standard format spec preceding the specifier:
+
+    >>> @formattable
+    ... class Data(float):
+    ...     @formatmethod('MB', suffix=True)
+    ...     def _repr_mb_(self, spec, std_spec):
+    ...         return f'{self / 1024 ** 2:{std_spec}} {spec}'
+    ...
+    >>> f'{Data(112_113_254):.2fMB}'
+    '106.92 MB'
+
+    The empty specifier is never treated as a suffix, since it would match every format spec there is.
     """
 
-    def __init__(self, *specs: Union[Target, FormatSpec], override: bool = False) -> None:
+    def __init__(self, *specs: Union[Target, FormatSpec], override: bool = False, suffix: bool = False) -> None:
 
         self.override: bool = override
+        self.suffix: bool = suffix
 
         method: Union[Sentinel, Target] = SENTINEL
 
@@ -201,6 +246,8 @@ class formatmethod:
     def __call__(self, method: Target) -> 'formatmethod':
         check_types(method, Callable, TARGET_TYPE_ERROR)
         getattr(self, SPECS).update(getattr(method, SPECS, set()))
+        # stacked formatmethods union their specifiers, so union the suffix flag along with them
+        self.suffix = self.suffix or getattr(method, "suffix", False)
         self._method = getattr(method, "__func__", method)
         return self
 
