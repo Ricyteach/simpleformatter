@@ -34,18 +34,20 @@ Examples:
 """
 
 
+import logging
+from logging import NullHandler
+
+from .simpleformatter import SimpleFormatter, SimpleFormatterError, formatmethod
+
 __author__ = """Ricky L Teachey Jr"""
 __email__ = 'ricky@teachey.org'
-__version__ = '0.1.0'
+__version__ = '0.4.0'
 
-from .simpleformatter import SimpleFormatter, formatmethod
+__all__ = ["SimpleFormatter", "SimpleFormatterError", "formatmethod", "formattable", "simpleformatter", "target"]
 
 simpleformatter = SimpleFormatter()
 formattable = simpleformatter.formattable
 target = simpleformatter.target
 
 # Set default logging handler to avoid "No handler found" warnings.
-import logging
-from logging import NullHandler
-
 logging.getLogger(__name__).addHandler(NullHandler())

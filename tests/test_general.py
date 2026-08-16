@@ -81,7 +81,7 @@ def test_formatters_first(a_last, formatters_first, spec):
 
 @pytest.mark.parametrize("bad_arg", [
     None, 1, object(),
-], ids= ("NoneType", "int", "object()"))
+], ids=("NoneType", "int", "object()"))
 def test_str_only_spec(bad_arg, target, formatmethod, formattable):
     """format specs must be strings (might change this requirement later...?)"""
 

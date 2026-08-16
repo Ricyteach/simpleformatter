@@ -1,6 +1,7 @@
 from inspect import signature
 from itertools import repeat
-from typing import Optional, NewType, Callable, Dict, Mapping, TypeVar, Type, Union, Sequence, Any, Iterable, Tuple
+from typing import (Optional, NamedTuple, NewType, Callable, Dict, Mapping, TypeVar, Type, Union, Sequence, Any,
+                    Iterable, Tuple)
 
 Sentinel = type("Sentinel", (), {})
 SENTINEL = Sentinel()
@@ -26,64 +27,93 @@ class SimpleFormatterError(Exception):
     pass
 
 
+class Resolution(NamedTuple):
+    """The outcome of resolving a format spec.
+
+    `spec` is the registered specifier that was matched, and `std_spec` is whatever preceded it in the format spec.
+    For an exact match `spec` is the whole format spec and `std_spec` is empty; for a suffix match on, say, '.3ft',
+    `spec` is 'ft' and `std_spec` is '.3'.
+    """
+
+    target: Target
+    spec: FormatSpec
+    std_spec: FormatSpec = ""
+
+
+class MethodMatch(NamedTuple):
+    """A formatmethod matched against a format spec, with the specifier it matched and whatever preceded it.
+
+    Split out from Resolution because the priority rules need the formatmethod itself, to consult its override flag.
+    """
+
+    method: 'formatmethod'
+    spec: FormatSpec
+    std_spec: FormatSpec = ""
+
+
 def _new__format__(self: Any, format_spec: FormatSpec) -> FormatString:
     """Replacement __format__ formatmethod for formattable decorated classes"""
 
     if not isinstance(format_spec, str):
         raise TypeError(f"__format__() argument must be str, not {type(format_spec).__qualname__!s}")
 
-    target: Target
+    resolution: Resolution
     try:
-        target = compute_formatting_func(self, format_spec)
+        resolution = compute_formatting_func(self, format_spec)
     except SimpleFormatterError:
+        default__format__: Target
         try:
-            target = getattr(type(self), DEFAULT__FORMAT__)
+            default__format__ = getattr(type(self), DEFAULT__FORMAT__)
         except AttributeError:
             raise ValueError("invalid format specifier")
         else:
-            return target(self, format_spec)
+            return default__format__(self, format_spec)
 
     # user defined targets *may* discard arguments for convenience
     # TODO: figure out if want to allow discarding self and keeping format_spec? how to do? check staticmethod??
-    if len(signature(target).parameters) == 0:
-        return target()
-    if len(signature(target).parameters) == 1:
-        return target(self)
-    return target(self, format_spec)
+    param_count = len(signature(resolution.target).parameters)
+    if param_count == 0:
+        return resolution.target()
+    if param_count == 1:
+        return resolution.target(self)
+    if param_count == 2:
+        return resolution.target(self, resolution.spec)
+    return resolution.target(self, resolution.spec, resolution.std_spec)
 
 
-def compute_formatting_func(obj: Any, format_spec: FormatSpec) -> Target:
+def compute_formatting_func(obj: Any, format_spec: FormatSpec) -> Resolution:
     """Uses the SimpleFormatters and formatmethods associated with obj to compute a formatting function.
 
     Raises SimpleFormatterError if obj has no associated SimpleFormatter for that format specifier.
     """
 
     # get any formatmethod first and check if it is set to override
-    format_method: Optional[formatmethod]
+    match: Optional[MethodMatch]
     try:
-        format_method = lookup_formatmethod(obj, format_spec)
+        match = lookup_formatmethod(obj, format_spec)
     except SimpleFormatterError:
-        format_method = None
+        match = None
     else:
         # formatmethod with override comes first
-        if format_method.override:
-            return format_method.__func__
+        if match.method.override:
+            return Resolution(match.method.__func__, match.spec, match.std_spec)
 
     # the specifier target is next priority
     try:
         return compute_target(obj, format_spec)
     except SimpleFormatterError as e:
-        if format_method is None:
+        if match is None:
             raise e
         else:
             # formatmethod with no override comes last
-            return format_method.__func__
+            return Resolution(match.method.__func__, match.spec, match.std_spec)
 
 
-def compute_target(obj: Any, format_spec: FormatSpec) -> Target:
+def compute_target(obj: Any, format_spec: FormatSpec) -> Resolution:
     """Retrieve the target formatting function given an object and format specifier.
 
-    The SimpleFormatters associated with obj are combined to find the target.
+    The SimpleFormatters associated with obj are combined to find the target. Exact specifier matches are preferred;
+    failing that, the longest suffix-registered specifier the format spec ends with wins.
     """
 
     cls = type(obj)
@@ -92,38 +122,64 @@ def compute_target(obj: Any, format_spec: FormatSpec) -> Target:
     # build composite registries from formatters
     composite_cls_reg: FormatDict = dict()
     composite_target_reg: FormatDict = dict()
+    composite_suffix_reg: FormatDict = dict()
 
     fmtr: SimpleFormatter
     for fmtr in getattr(obj, FORMATTERS):
         composite_cls_reg.update(fmtr.cls_reg.get(cls, empty_dict))
         composite_target_reg.update(fmtr.target_reg)
+        composite_suffix_reg.update(fmtr.suffix_reg)
 
-    try:
-        # formattable decorator first
-        return composite_cls_reg[format_spec]
-    except KeyError:
+    # exact matches first: formattable decorator, then target decorators
+    for reg in (composite_cls_reg, composite_target_reg):
         try:
-            # target decorators second
-            return composite_target_reg[format_spec]
+            return Resolution(reg[format_spec], format_spec)
         except KeyError:
-            # signal spec handling failure
-            raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
+            pass
+
+    # then the longest suffix-registered specifier, so that eg '.3ft' resolves to the 'ft' target with '.3' left over
+    # (longest first means 'mm' beats 'm', and a suffix match is unique for any given length)
+    for spec in sorted(composite_suffix_reg, key=len, reverse=True):
+        if format_spec.endswith(spec):
+            return Resolution(composite_suffix_reg[spec], spec, format_spec[:-len(spec)])
+
+    # signal spec handling failure
+    raise SimpleFormatterError(f"unhandled format_spec: {format_spec!r}")
 
 
-def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> 'formatmethod':
+def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> MethodMatch:
     """Retrieve the obj formatmethod that utilizes the format_spec, if it exists.
+
+    An exact specifier match wins. Failing that, the longest suffix among the formatmethods declared with
+    suffix=True is used, so '.2MB' can resolve to a formatmethod registered for 'MB'.
 
     Raises SimpleFormatterError if one is not found.
     """
 
-    try:
-        cls = type(obj)
-        # perform lookup based on the cls's formatmethod-like objects (ie, objects with a SPECS attribute)
-        # the MOST RECENTLY DEFINED method using the format_spec is the one we want
-        return next(cls_member for cls_member in (getattr(cls, attr, None) for attr in reversed(dir(obj)))
-                      if format_spec in getattr(cls_member, SPECS, ()))
-    except StopIteration:
+    cls = type(obj)
+    # perform lookup based on the cls's formatmethod-like objects (ie, objects with a SPECS attribute)
+    # the MOST RECENTLY DEFINED method using the format_spec is the one we want
+    cls_members = [getattr(cls, attr, None) for attr in reversed(dir(obj))]
+
+    for cls_member in cls_members:
+        if format_spec in getattr(cls_member, SPECS, ()):
+            return MethodMatch(cls_member, format_spec)
+
+    # no exact match, so fall back to the longest suffix declared by a suffix formatmethod; the empty specifier is
+    # skipped because it is a suffix of every format spec there is
+    best: Optional[Tuple[Any, FormatSpec]] = None
+    for cls_member in cls_members:
+        if not getattr(cls_member, "suffix", False):
+            continue
+        for spec in getattr(cls_member, SPECS, ()):
+            if spec and format_spec.endswith(spec) and (best is None or len(spec) > len(best[1])):
+                best = (cls_member, spec)
+
+    if best is None:
         raise SimpleFormatterError()
+
+    cls_member, spec = best
+    return MethodMatch(cls_member, spec, format_spec[:-len(spec)])
 
 
 class formatmethod:
@@ -144,11 +200,26 @@ class formatmethod:
     'Formatted C object'
     >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
     'Formatted C object spec'
+
+    Pass suffix=True to match the specifier at the *end* of a format spec rather than as the whole of it. The method
+    may then take a third argument, which receives the standard format spec preceding the specifier:
+
+    >>> @formattable
+    ... class Data(float):
+    ...     @formatmethod('MB', suffix=True)
+    ...     def _repr_mb_(self, spec, std_spec):
+    ...         return f'{self / 1024 ** 2:{std_spec}} {spec}'
+    ...
+    >>> f'{Data(112_113_254):.2fMB}'
+    '106.92 MB'
+
+    The empty specifier is never treated as a suffix, since it would match every format spec there is.
     """
 
-    def __init__(self, *specs: Union[Target, FormatSpec], override: bool = False) -> None:
+    def __init__(self, *specs: Union[Target, FormatSpec], override: bool = False, suffix: bool = False) -> None:
 
         self.override: bool = override
+        self.suffix: bool = suffix
 
         method: Union[Sentinel, Target] = SENTINEL
 
@@ -161,7 +232,7 @@ class formatmethod:
         check_types(specs, str, SPECS_TYPE_ERROR)
 
         # associate specs with this formatmethod, and guard against double decorators, no specs == empty string spec
-        setattr(self, SPECS, set(specs) if specs else {"",})
+        setattr(self, SPECS, set(specs) if specs else {""})
 
         # apply decorator if called with no arguments
         if method is not SENTINEL:
@@ -175,6 +246,8 @@ class formatmethod:
     def __call__(self, method: Target) -> 'formatmethod':
         check_types(method, Callable, TARGET_TYPE_ERROR)
         getattr(self, SPECS).update(getattr(method, SPECS, set()))
+        # stacked formatmethods union their specifiers, so union the suffix flag along with them
+        self.suffix = self.suffix or getattr(method, "suffix", False)
         self._method = getattr(method, "__func__", method)
         return self
 
@@ -203,17 +276,21 @@ class SimpleFormatter:
     """
 
     target_reg: FormatDict
+    suffix_reg: FormatDict
     cls_reg: Dict[Type, FormatDict]
 
     def __init__(self) -> None:
         self.target_reg = dict()
+        self.suffix_reg = dict()
         self.cls_reg = dict()
 
     def formattable(self, cls: Optional[T_Type] = None, **kwargs: Target) -> Union[T_Type, Callable[[T_Type], T_Type]]:
         """formattable decorator, applied to classes. Decorated class is registered with the SimpleFormatter, and
         cls.__format__ is overridden.
 
-        Optionally provide kwarg(s) that map specifier strings to formatting functions.
+        Optionally provide kwarg(s) that map specifier strings to formatting functions. Because they are passed as
+        kwargs, specifiers registered this way have to be valid identifiers; use `target` or `formatmethod` to handle
+        the empty specifier.
 
         >>> def my_formatter1(obj):
         ...     return 'my_formatter1 formatted the object'
@@ -221,13 +298,13 @@ class SimpleFormatter:
         >>> def my_formatter2(obj, spec):  # a second argument for the spec is optional
         ...     return f'my_formatter2 formatted the object with {spec}'
         ...
-        >>> @formattable(reg={'': my_formatter1}, spec=my_formatter2)
+        >>> @formattable(spec1=my_formatter1, spec2=my_formatter2)
         ... class C: ...
         ...
-        >>> f"{C()}"  # no specifier, my_formatter1 called
+        >>> f"{C():spec1}"  # 'spec1' specifier, my_formatter1 called
         'my_formatter1 formatted the object'
-        >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
-        'my_formatter2 formatted the object with spec'
+        >>> f"{C():spec2}"  # 'spec2' specifier, my_formatter2 called
+        'my_formatter2 formatted the object with spec2'
         """
 
         def formattable_dec(dec_cls: T_Type) -> T_Type:
@@ -236,7 +313,8 @@ class SimpleFormatter:
 
         return formattable_dec if cls is None else formattable_dec(cls)
 
-    def target(self, *specs: Union[Target, FormatSpec]) -> Union[Target, TargetDecorator]:
+    def target(self, *specs: Union[Target, FormatSpec],
+               suffix: bool = False) -> Union[Target, TargetDecorator]:
         """target decorator, applied to functions that return a string representation of some formattable object.
 
         Optionally provide specifier strings (no spec provided means the function will be used when there is no spec).
@@ -256,6 +334,23 @@ class SimpleFormatter:
         'my_formatter1 formatted the object'
         >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
         'my_formatter2 formatted the object with spec'
+
+        Pass suffix=True to match the specifier at the *end* of a format spec rather than as the whole of it. The
+        function may then take a third argument, which receives the standard format spec preceding the specifier:
+
+        >>> @target('ft', suffix=True)
+        ... def to_feet(inches, spec, std_spec):
+        ...     return f'{inches / 12:{std_spec}} {spec}'
+        ...
+        >>> @formattable
+        ... class Inches(float): ...
+        ...
+        >>> f"{Inches(8.45):.3ft}"
+        '0.704 ft'
+
+        When several suffix specifiers match, the longest wins, so 'mm' is preferred over 'm'. Take care registering
+        suffix specifiers that collide with the built-in presentation types (b, c, d, e, E, f, F, g, G, n, o, s, x,
+        X and %): registering 'f' as a suffix would capture '.2f' and shadow ordinary float formatting.
         """
 
         func: Union[Sentinel, Target] = SENTINEL
@@ -265,7 +360,7 @@ class SimpleFormatter:
             func, *specs = specs
 
         def target_dec(func: Target) -> Target:
-            self.register_target(func, specs)
+            self.register_target(func, specs, suffix)
             return func
 
         return target_dec if func is SENTINEL else target_dec(func)
@@ -291,24 +386,36 @@ class SimpleFormatter:
         except KeyError:
             self.cls_reg[cls] = reg
 
-    def register_target(self, target: Target, specs: Union[FormatSpec, Iterable[FormatSpec]]) -> None:
-        """Associate the target formatting function with the SimpleFormatter instance for formatting."""
+    def register_target(self, target: Target, specs: Union[FormatSpec, Iterable[FormatSpec]],
+                        suffix: bool = False) -> None:
+        """Associate the target formatting function with the SimpleFormatter instance for formatting.
+
+        With suffix=True the specifiers match the end of a format spec instead of the whole of it.
+        """
 
         specs_tup: Tuple[FormatSpec] = (specs,) if isinstance(specs, str) else tuple(specs)
         check_types(specs_tup, str, SPECS_TYPE_ERROR)
         check_types(target, Callable, TARGET_TYPE_ERROR)
 
-        # update the target registry with the specifiers
-        self.target_reg.update(zip(specs_tup, repeat(target)))
+        # no specs == empty string spec, matching formatmethod
+        if not specs_tup:
+            specs_tup = ("",)
+
+        # update the appropriate registry with the specifiers; the empty specifier is never a suffix, since it would
+        # match every format spec there is
+        for spec in specs_tup:
+            reg = self.suffix_reg if (suffix and spec) else self.target_reg
+            reg[spec] = target
 
 
 def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[str, Iterable[str]]) -> None:
     """Utility for enforcing type requirements on arguments.
 
-    Error message strings use the kwargs `type_name` and `obj`, and can be of these forms, or variants:
+    Error message strings use the kwargs ``type_``, ``type_name`` and ``obj``, and can be of these forms, or
+    variants::
 
-        "arg1 must be {type_.__qualname__!s}, not {obj.__class__.__qualname__)!s}"
-        "arg1 must be {type_name!s}, not {obj.__class__.__qualname__)!s}"
+        "arg1 must be {type_.__qualname__!s}, not {obj.__class__.__qualname__!s}"
+        "arg1 must be {type_name!s}, not {obj.__class__.__qualname__!s}"
     """
 
     if isinstance(objs, str) or not isinstance(objs, Iterable):
