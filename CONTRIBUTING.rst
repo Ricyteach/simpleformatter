@@ -64,11 +64,12 @@ Ready to contribute? Here's how to set up `simpleformatter` for local developmen
 
     $ git clone git@github.com:your_name_here/simpleformatter.git
 
-3. Install your local copy into a virtualenv. Assuming you have virtualenvwrapper installed, this is how you set up your fork for local development::
+3. Install your local copy into a virtual environment, in editable mode with the test dependencies::
 
-    $ mkvirtualenv simpleformatter
     $ cd simpleformatter/
-    $ python setup.py develop
+    $ python -m venv .venv
+    $ source .venv/bin/activate
+    $ pip install -e ".[dev]"
 
 4. Create a branch for local development::
 
@@ -79,11 +80,11 @@ Ready to contribute? Here's how to set up `simpleformatter` for local developmen
 5. When you're done making changes, check that your changes pass flake8 and the
    tests, including testing other Python versions with tox::
 
-    $ flake8 simpleformatter tests
-    $ python setup.py test or py.test
+    $ flake8 simpleformatter tests conftest.py
+    $ pytest
     $ tox
 
-   To get flake8 and tox, just pip install them into your virtualenv.
+   To get flake8 and tox, just pip install them into your virtual environment.
 
 6. Commit your changes and push your branch to GitHub::
 
@@ -102,8 +103,9 @@ Before you submit a pull request, check that it meets these guidelines:
 2. If the pull request adds functionality, the docs should be updated. Put
    your new functionality into a function with a docstring, and add the
    feature to the list in README.rst.
-3. The pull request should work for Python 2.7, 3.4, 3.5 and 3.6, and for PyPy. Check
-   https://travis-ci.org/Ricyteach/simpleformatter/pull_requests
+3. The pull request should work for Python 3.10, 3.11, 3.12 and 3.13. GitHub Actions runs the suite against all of
+   them on every pull request; check
+   https://github.com/Ricyteach/simpleformatter/actions
    and make sure that the tests pass for all supported Python versions.
 
 Tips
@@ -111,18 +113,26 @@ Tips
 
 To run a subset of tests::
 
-$ py.test tests.test_simpleformatter
+$ pytest tests/test_formattable.py
+
+``pytest`` also runs the doctests in the package modules. To run only those::
+
+$ pytest simpleformatter
 
 
 Deploying
 ---------
 
 A reminder for the maintainers on how to deploy.
-Make sure all your changes are committed (including an entry in HISTORY.rst).
-Then run::
+Make sure all your changes are committed (including an entry in HISTORY.rst),
+then bump ``version`` in ``pyproject.toml`` and ``__version__`` in
+``simpleformatter/__init__.py`` to match, and run::
 
-$ bumpversion patch # possible: major / minor / patch
+$ git tag -a vX.Y.Z -m "vX.Y.Z"
 $ git push
 $ git push --tags
 
-Travis will then deploy to PyPI if tests pass.
+The package is not currently published to PyPI. To build the distributions locally::
+
+$ pip install build
+$ python -m build
