@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simpleformatter"
+version = "0.2.0"
+description = "A quick way to add custom versatile formatting to objects"
+readme = "README.rst"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Ricky L Teachey Jr", email = "ricky@teachey.org" }]
+keywords = ["formatting", "f-string", "format", "__format__", "format-spec"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+docs = ["sphinx>=7", "sphinx-rtd-theme>=2"]
+
+[project.urls]
+Homepage = "https://github.com/Ricyteach/simpleformatter"
+Source = "https://github.com/Ricyteach/simpleformatter"
+Issues = "https://github.com/Ricyteach/simpleformatter/issues"
+Background = "https://stackoverflow.com/questions/55876683/hook-into-the-builtin-python-f-string-format-machinery-to-override-extend-built"
+
+[tool.setuptools]
+packages = ["simpleformatter"]
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"
+testpaths = ["tests", "simpleformatter"]
