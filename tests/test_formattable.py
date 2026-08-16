@@ -284,7 +284,7 @@ def test_ambiguous_no_spec_and_inheritance(formattable, formatmethod):
             return "d"
 
         @formatmethod
-        def c(self):
+        def c(self):  # noqa: F811 -- the redefinition is the point: last one defined wins
             return "e"
 
     assert f"{Z()}" == "e"

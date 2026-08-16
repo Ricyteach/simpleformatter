@@ -48,7 +48,7 @@ def func2(sf2):
 
 @pytest.mark.parametrize("spec", [
     "spec", "",
-], ids= ["spec", "empty_str"])
+], ids=["spec", "empty_str"])
 def test_modular_functions(spec, obj1, func1, obj2, func2):
     """make sure sf1 and sf2 format things independently of each other"""
     assert f"{obj1:{spec}}" == "f1"
@@ -75,5 +75,5 @@ def test_modular_methods(sf1, sf2, formatmethod):
 
     x = X()
 
-    assert f"{x:spec1}"=="f1"
-    assert f"{x:spec2}"=="f2"
+    assert f"{x:spec1}" == "f1"
+    assert f"{x:spec2}" == "f2"

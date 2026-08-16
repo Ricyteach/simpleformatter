@@ -121,7 +121,7 @@ def lookup_formatmethod(obj: Any, format_spec: FormatSpec) -> 'formatmethod':
         # perform lookup based on the cls's formatmethod-like objects (ie, objects with a SPECS attribute)
         # the MOST RECENTLY DEFINED method using the format_spec is the one we want
         return next(cls_member for cls_member in (getattr(cls, attr, None) for attr in reversed(dir(obj)))
-                      if format_spec in getattr(cls_member, SPECS, ()))
+                    if format_spec in getattr(cls_member, SPECS, ()))
     except StopIteration:
         raise SimpleFormatterError()
 
@@ -161,7 +161,7 @@ class formatmethod:
         check_types(specs, str, SPECS_TYPE_ERROR)
 
         # associate specs with this formatmethod, and guard against double decorators, no specs == empty string spec
-        setattr(self, SPECS, set(specs) if specs else {"",})
+        setattr(self, SPECS, set(specs) if specs else {""})
 
         # apply decorator if called with no arguments
         if method is not SENTINEL:
@@ -213,7 +213,9 @@ class SimpleFormatter:
         """formattable decorator, applied to classes. Decorated class is registered with the SimpleFormatter, and
         cls.__format__ is overridden.
 
-        Optionally provide kwarg(s) that map specifier strings to formatting functions.
+        Optionally provide kwarg(s) that map specifier strings to formatting functions. Because they are passed as
+        kwargs, specifiers registered this way have to be valid identifiers; use `target` or `formatmethod` to handle
+        the empty specifier.
 
         >>> def my_formatter1(obj):
         ...     return 'my_formatter1 formatted the object'
@@ -221,13 +223,13 @@ class SimpleFormatter:
         >>> def my_formatter2(obj, spec):  # a second argument for the spec is optional
         ...     return f'my_formatter2 formatted the object with {spec}'
         ...
-        >>> @formattable(reg={'': my_formatter1}, spec=my_formatter2)
+        >>> @formattable(spec1=my_formatter1, spec2=my_formatter2)
         ... class C: ...
         ...
-        >>> f"{C()}"  # no specifier, my_formatter1 called
+        >>> f"{C():spec1}"  # 'spec1' specifier, my_formatter1 called
         'my_formatter1 formatted the object'
-        >>> f"{C():spec}"  # 'spec' specifier, my_formatter2 called
-        'my_formatter2 formatted the object with spec'
+        >>> f"{C():spec2}"  # 'spec2' specifier, my_formatter2 called
+        'my_formatter2 formatted the object with spec2'
         """
 
         def formattable_dec(dec_cls: T_Type) -> T_Type:
@@ -298,6 +300,10 @@ class SimpleFormatter:
         check_types(specs_tup, str, SPECS_TYPE_ERROR)
         check_types(target, Callable, TARGET_TYPE_ERROR)
 
+        # no specs == empty string spec, matching formatmethod
+        if not specs_tup:
+            specs_tup = ("",)
+
         # update the target registry with the specifiers
         self.target_reg.update(zip(specs_tup, repeat(target)))
 
@@ -305,10 +311,11 @@ class SimpleFormatter:
 def check_types(objs: Any, types: Union[Type, Iterable[Type]], err_msgs: Union[str, Iterable[str]]) -> None:
     """Utility for enforcing type requirements on arguments.
 
-    Error message strings use the kwargs `type_name` and `obj`, and can be of these forms, or variants:
+    Error message strings use the kwargs ``type_``, ``type_name`` and ``obj``, and can be of these forms, or
+    variants::
 
-        "arg1 must be {type_.__qualname__!s}, not {obj.__class__.__qualname__)!s}"
-        "arg1 must be {type_name!s}, not {obj.__class__.__qualname__)!s}"
+        "arg1 must be {type_.__qualname__!s}, not {obj.__class__.__qualname__!s}"
+        "arg1 must be {type_name!s}, not {obj.__class__.__qualname__!s}"
     """
 
     if isinstance(objs, str) or not isinstance(objs, Iterable):
