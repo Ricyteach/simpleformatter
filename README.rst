@@ -91,21 +91,20 @@ Specifiers registered this way are passed as keyword arguments, so they must be 
 Use the ``target`` decorator to mark a formatting function as the target of one or more specifiers. The decorated
 function then serves *any* formattable class:
 
->>> length_dict = {'in': 1, 'ft': 1/12, 'cm': 2.54, 'mm': 25.4, 'm': 0.0254}
->>> @target(*length_dict)  # specifiers are: in, ft, cm, mm, m
-... def format_convert(value, unit):
-...     return f'{length_dict[unit] * value:.4g} {unit}'
+>>> @target('shout')
+... def format_shout(obj, spec):
+...     return f'{obj}!!!'.upper()
 ...
 >>> @formattable
-... class Diameter(float): ...
+... class Greeting(str): ...
 ...
 >>> @formattable
-... class Depth(float): ...
+... class Farewell(str): ...
 ...
->>> f"{Diameter(8.45):ft}"
-'0.7042 ft'
->>> f"{Depth(3.77):mm}"
-'95.76 mm'
+>>> f"{Greeting('hello'):shout}"
+'HELLO!!!'
+>>> f"{Farewell('goodbye'):shout}"
+'GOODBYE!!!'
 
 A ``target`` applied with no specifier at all handles the *empty* specifier — plain ``f"{obj}"``. Note that
 ``target`` registers globally, so doing this affects every formattable class, including inside your own format
@@ -149,18 +148,62 @@ The ``formatmethod`` decorator makes a method the target of the given specifier(
 >>> f'{Data(112_113_254):GB}'
 '0.1044136043637991 GB'
 
+Compound specifiers: numbers with units
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+By default a specifier has to match the whole format spec. Pass ``suffix=True`` to ``target`` to match the *end* of
+the spec instead, which leaves the leading part free to be an ordinary format spec. A suffix target may take a
+third argument, which receives that leading part:
+
+>>> length_dict = {'in': 1, 'ft': 1/12, 'cm': 2.54, 'mm': 25.4, 'm': 0.0254}
+>>> @target(*length_dict, suffix=True)  # specifiers are: in, ft, cm, mm, m
+... def format_convert(value, unit, std_spec):
+...     return f'{length_dict[unit] * value:{std_spec}} {unit}'
+...
+>>> @formattable
+... class Measurement(float): ...
+...
+>>> f'{Measurement(8.45):.3ft}'
+'0.704 ft'
+>>> f'{Measurement(12):>12.2fmm}'
+'      304.80 mm'
+
+The leading part is handed to the standard machinery untouched, so the whole format spec mini-language — fill,
+alignment, sign, width, precision and presentation type — is available in front of the unit. When more than one
+suffix matches, the longest wins, so ``mm`` beats ``m``.
+
+One gotcha worth knowing: a bare precision like ``.1`` means *one significant digit*, not one decimal place, so
+``f'{x:.1ft}'`` produces ``'1e+00 ft'``. If you would rather default to fixed point, do it in the target:
+
+>>> @target(*length_dict, suffix=True)
+... def format_fixed(value, unit, std_spec):
+...     if std_spec and std_spec[-1] not in 'bcdeEfFgGnosxX%':
+...         std_spec += 'f'  # no presentation type given, so default to fixed point
+...     return f'{length_dict[unit] * value:{std_spec}} {unit}'
+...
+>>> @formattable
+... class Length(float): ...
+...
+>>> f'{Length(12):.1ft}'
+'1.0 ft'
+>>> f'{Length(12):.2cm}'
+'30.48 cm'
+>>> f'{Length(12):.3m}'
+'0.305 m'
+
 Resolution order
 ~~~~~~~~~~~~~~~~
 
 When more than one of the above could handle a specifier, they are tried in this order:
 
 1. a ``formatmethod`` declared with ``override=True``
-2. a specifier registered on the class via ``formattable``
-3. a specifier registered globally via ``target``
-4. a ``formatmethod`` without ``override``
-5. the class's original ``__format__``
+2. an *exact* specifier registered on the class via ``formattable``
+3. an *exact* specifier registered globally via ``target``
+4. the longest *suffix* specifier registered via ``target(..., suffix=True)``
+5. a ``formatmethod`` without ``override``
+6. the class's original ``__format__``
 
-Step 5 means built-in specifiers keep working on a decorated class — unrecognized specifiers are handed back to the
+Step 6 means built-in specifiers keep working on a decorated class — unrecognized specifiers are handed back to the
 original machinery rather than raising:
 
 >>> @formattable
@@ -172,12 +215,14 @@ original machinery rather than raising:
 Limitations
 -----------
 
-**Specifiers are matched exactly.** There is no parsing of compound specifiers, so a registered ``ft`` target does
-not match the specifier ``.3ft``; that falls through to ``float.__format__`` and raises ``ValueError``. Supporting
-something like ``f"{x:.3ft}"`` would require deciding how a specifier is split into a "standard" part and a custom
-part, and how ambiguity between competing targets is resolved. That design work has not been done.
-
 **Built-in types are not supported**, and cannot be without bytecode manipulation — see Background above.
+
+**Suffix specifiers can shadow the built-in presentation types.** Matching is done on the raw spec text, so a
+suffix that collides with one of ``b c d e E f F g G n o s x X %`` will capture ordinary format specs — registering
+``f`` as a suffix would swallow ``.2f``. Multi-character unit names do not run into this.
+
+**Suffix matching is only available on** ``target``. ``formatmethod`` and the ``formattable`` keyword arguments
+still match the whole spec exactly.
 
 Development
 -----------

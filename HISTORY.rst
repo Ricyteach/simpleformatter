@@ -2,6 +2,24 @@
 History
 =======
 
+0.3.0 (2026-08-16)
+------------------
+
+* Added: ``target`` accepts ``suffix=True``, matching a specifier at the *end* of a format spec rather than as the
+  whole of it. This makes compound specifiers work — ``f"{x:.3ft}"`` resolves to the ``ft`` target with ``.3`` left
+  over as an ordinary format spec. When several suffixes match, the longest wins.
+* Added: a target may now take a third argument, which receives the standard format spec preceding the matched
+  specifier. The two argument form receives the matched specifier, which is unchanged for exact matches.
+* Added: ``Resolution``, the named tuple returned by ``compute_formatting_func`` and ``compute_target``, carrying
+  the target, the matched specifier and the leftover standard spec. Both functions previously returned a bare
+  callable.
+* This is the unit-formatting use case the library was originally written for. It never worked before: specifier
+  lookup was exact-match only, so ``f"{x:.3ft}"`` fell through to ``float.__format__`` and raised ``ValueError``.
+
+Suffix matching is opt-in per target, and remains unavailable on ``formatmethod`` and on the ``formattable``
+keyword arguments. Note that suffix matching is done on raw spec text, so a suffix colliding with a built-in
+presentation type (``b c d e E f F g G n o s x X %``) will capture ordinary format specs.
+
 0.2.0 (2026-08-16)
 ------------------
 
